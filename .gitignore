@@ -17,3 +17,7 @@
 # system
 Thumbs.db
 Desktop.ini
+
+# KiCad 
+*-backups/
+_autosave*
