@@ -1,0 +1,19 @@
+# PlatformIO build
+.pio/
+**/.pio/
+
+# VSCode
+.vscode/
+
+# firmware build tylko z PlatformIO
+.pio/build/
+
+# KiCad lock
+*.lck
+
+# logi
+*.log
+
+# system
+Thumbs.db
+Desktop.ini
