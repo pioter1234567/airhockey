@@ -1,0 +1,32 @@
+### Footprint positions - created on 2026-01-16T09:00:13+0100 ###
+### Printed by KiCad version 9.0.6
+## Unit = mm, Angle = deg.
+## Side : bottom
+# Ref     Val                Package                 PosX       PosY       Rot  Side
+C16       100n               C_0805_2012Metric   145.5000  -110.0100    0.0000  bottom
+C17       22u                C_0805_2012Metric   145.5000  -112.4200    0.0000  bottom
+C18       100n               C_0805_2012Metric   134.6000  -110.5600  180.0000  bottom
+C19       10u                C_0805_2012Metric   134.6000  -112.8900  180.0000  bottom
+Q1        BC817              SOT-23              118.8100   -83.5500  -90.0000  bottom
+R3        4k7                R_0805_2012Metric   121.2400   -78.3300  -90.0000  bottom
+R4        100k               R_0805_2012Metric   115.3600   -83.1800  -90.0000  bottom
+R17       330R               R_0805_2012Metric    97.6342   -98.2250  -90.0000  bottom
+R18       470R               R_0805_2012Metric   100.6328   -98.2250  -90.0000  bottom
+R19       470R               R_0805_2012Metric   106.6300   -98.2250  -90.0000  bottom
+R21       470R               R_0805_2012Metric   103.6314   -98.2250  -90.0000  bottom
+R23       10k                R_0805_2012Metric   133.6800   -37.7300  -90.0000  bottom
+R25       1k8                R_0805_2012Metric   143.8800  -123.8700    0.0000  bottom
+R26       2k2                R_0805_2012Metric   140.1550  -123.8700    0.0000  bottom
+R27       30k                R_0805_2012Metric    93.5675  -100.5700    0.0000  bottom
+R28       30k                R_0805_2012Metric    93.5675  -103.5200    0.0000  bottom
+R29       1k                 R_0805_2012Metric   136.4300  -123.8700  180.0000  bottom
+R30       6k8                R_0805_2012Metric   143.8800  -121.2000  180.0000  bottom
+R31       2k2                R_0805_2012Metric   112.1000  -107.3500  180.0000  bottom
+R32       2k2                R_0805_2012Metric   112.1000  -104.5200  180.0000  bottom
+R33       6k2                R_0805_2012Metric    72.1300  -118.0100  180.0000  bottom
+R34       6k2                R_0805_2012Metric    91.0400  -117.7000    0.0000  bottom
+R35       1k                 R_0805_2012Metric   149.1400   -36.3900  180.0000  bottom
+R36       1k                 R_0805_2012Metric   149.1600   -44.3100  180.0000  bottom
+U1        ESP32-S3-WROOM-1   ESP32-S3-WROOM-1    119.3900   -40.8600  180.0000  bottom
+U3        MCP1826S-3302E/DB  MCP1826S-5002EDB    140.0300  -117.7475  -90.0000  bottom
+## End
