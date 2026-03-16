@@ -83,7 +83,39 @@ static bool last5Read = HIGH;
 static uint32_t last2ChangeMs = 0;
 static uint32_t last5ChangeMs = 0;
 
+
+//inne
+
 bool comboReady = true;
+
+bool g_goalCalUiDirty = false;
+
+
+//kalibracja 
+// ===== ADC DEFAULTS =====
+static const uint16_t ADC_IDLE_DEFAULT = 4095;
+static const uint16_t ADC_BOTH_DEFAULT = 525;
+
+static const uint16_t ADC_A_MIN_DEFAULT = 2200;
+static const uint16_t ADC_A_MAX_DEFAULT = 3000;
+static const uint16_t ADC_A_CENTER_DEFAULT = 2600;
+
+static const uint16_t ADC_B_MIN_DEFAULT = 800;
+static const uint16_t ADC_B_MAX_DEFAULT = 1600;
+static const uint16_t ADC_B_CENTER_DEFAULT = 1100;
+
+
+// ===== CURRENT SETTINGS =====
+uint16_t adcIdle    = ADC_IDLE_DEFAULT;
+uint16_t adcBoth    = ADC_BOTH_DEFAULT;
+
+uint16_t adcAmin    = ADC_A_MIN_DEFAULT;
+uint16_t adcAmax    = ADC_A_MAX_DEFAULT;
+uint16_t adcAcenter = ADC_A_CENTER_DEFAULT;
+
+uint16_t adcBmin    = ADC_B_MIN_DEFAULT;
+uint16_t adcBmax    = ADC_B_MAX_DEFAULT;
+uint16_t adcBcenter = ADC_B_CENTER_DEFAULT;
 
 
 
@@ -106,6 +138,17 @@ bool comboReady = true;
 #define CAN_CMD_MINIGAME_AUDIO  0x50
 #define CAN_AUDIO_PLAY_TETRIS   0x01
 #define CAN_AUDIO_STOP          0x00
+
+
+// CAN dla goal calib
+#define CAN_ID_GOALCAL_CMD   0x350
+#define CAN_ID_GOALCAL_DATA  0x351
+
+#define CAN_CMD_GOALCAL_START_A 0x60
+#define CAN_CMD_GOALCAL_START_B 0x61
+#define CAN_CMD_GOALCAL_CANCEL  0x62
+#define CAN_CMD_GOALCAL_IDLE    0x63
+#define CAN_CMD_GOALCAL_SAMPLE  0x64
 
 // nie wiem do czego to??? pod 9 jest btn down w rev1.3 
 //const int PIN = 9; // GPIO35 = ADC1_CH7
@@ -247,6 +290,7 @@ static bool canRecoverBlocking(uint32_t timeout_ms = 600) {
 
 
 
+
 // Niski poziom: wysyłka ramki STD
 static bool canSendStd(uint32_t id, const uint8_t* data, uint8_t len) {
   
@@ -289,6 +333,11 @@ static bool canSendStd(uint32_t id, const uint8_t* data, uint8_t len) {
   return false;
 }
 
+static void goalCalSendCancelToMain() {
+  uint8_t c[1] = { CAN_CMD_GOALCAL_CANCEL };
+  canSendStd(CAN_ID_GOALCAL_CMD, c, 1);
+  Serial.println("[GCAL] sent CANCEL to main");
+}
 
 
 static inline uint32_t msLeft(uint32_t t_future){
@@ -310,6 +359,29 @@ static inline uint8_t settingsFlags() {
   return f;
 }
 
+void sendAdcThresholdsToMain() {
+
+  uint8_t d[8];
+
+  d[0] = adcAmin >> 8;
+  d[1] = adcAmin & 0xFF;
+
+  d[2] = adcAmax >> 8;
+  d[3] = adcAmax & 0xFF;
+
+  d[4] = adcBmin >> 8;
+  d[5] = adcBmin & 0xFF;
+
+  d[6] = adcBmax >> 8;
+  d[7] = adcBmax & 0xFF;
+
+  canSendStd(0x360, d, 8);
+
+  Serial.printf("[ADC] sent thresholds to main A:%u-%u B:%u-%u\n",
+                adcAmin, adcAmax,
+                adcBmin, adcBmax);
+}
+
 // WYŚLIJ ustawienia (raz) + krótko poczekaj na ACK (opcjonalnie)
 static bool canSendSettingsOnce(uint32_t ackWaitMs = 120) {
   const uint8_t p[4] = {
@@ -323,6 +395,9 @@ static bool canSendSettingsOnce(uint32_t ackWaitMs = 120) {
     Serial.println("[CAN] SettingsUpdate -> TX ERROR");
     return false;
   }
+
+  // tu wyślij aktualne progi ADC do main
+  sendAdcThresholdsToMain();
 
   // opcjonalne: szybki ACK (ID 0x312, DATA[0]=0xA5)
   uint32_t t0 = millis();
@@ -611,6 +686,54 @@ bool sdSaveSettings() {
   return true;
 }
 
+
+
+void adcSettingsLoad() {
+  Preferences p;
+  p.begin("adc", true);   // read-only
+
+  adcIdle    = p.getUShort("idle",    ADC_IDLE_DEFAULT);
+  adcBoth    = p.getUShort("both",    ADC_BOTH_DEFAULT);
+
+  adcAmin    = p.getUShort("amin",    ADC_A_MIN_DEFAULT);
+  adcAmax    = p.getUShort("amax",    ADC_A_MAX_DEFAULT);
+  adcAcenter = p.getUShort("acen",    ADC_A_CENTER_DEFAULT);
+
+  adcBmin    = p.getUShort("bmin",    ADC_B_MIN_DEFAULT);
+  adcBmax    = p.getUShort("bmax",    ADC_B_MAX_DEFAULT);
+  adcBcenter = p.getUShort("bcen",    ADC_B_CENTER_DEFAULT);
+
+  p.end();
+
+  Serial.printf("[ADC] load idle=%u both=%u A:%u-%u c=%u B:%u-%u c=%u\n",
+                adcIdle, adcBoth,
+                adcAmin, adcAmax, adcAcenter,
+                adcBmin, adcBmax, adcBcenter);
+}
+
+void adcSettingsSave() {
+  Preferences p;
+  p.begin("adc", false);  // read-write
+
+  p.putUShort("idle", adcIdle);
+  p.putUShort("both", adcBoth);
+
+  p.putUShort("amin", adcAmin);
+  p.putUShort("amax", adcAmax);
+  p.putUShort("acen", adcAcenter);
+
+  p.putUShort("bmin", adcBmin);
+  p.putUShort("bmax", adcBmax);
+  p.putUShort("bcen", adcBcenter);
+
+  p.end();
+
+  Serial.printf("[ADC] save idle=%u both=%u A:%u-%u c=%u B:%u-%u c=%u\n",
+                adcIdle, adcBoth,
+                adcAmin, adcAmax, adcAcenter,
+                adcBmin, adcBmax, adcBcenter);
+}
+
 // ====================== 7) Czas: systemUnix + RTC status + sync ======================
 uint32_t sysEpochAtSync = 0;   // unixtime w momencie synchronizacji
 uint32_t sysMsAtSync    = 0;   // millis() w momencie synchronizacji
@@ -804,6 +927,10 @@ enum Screen {
 
   SCR_SETDT,           // Set date & time
 
+  SCR_GOALCAL,         // Goal calibration >
+  SCR_GOALCAL_RUN,     // ekran trwającej kalibracji
+  SCR_GOALCAL_THRESH,  // ADC threshold
+
   // Pozostałe
   SCR_OTHER,           // About
   SCR_COINS,            // Coin counter
@@ -833,6 +960,34 @@ int selCoinRoot = 0;   // w podmenu Coin counter
 int selCoinLog  = 0;   // indeks globalny wybranej pozycji (0 = najnowsza)
 int coinLogTop  = 0;   // pierwszy indeks na ekranie (do przewijania)
 int selPuckLock = 0;  
+
+int selGoalCal = 0;
+
+enum GoalCalMode : uint8_t {
+  GCAL_NONE = 0,
+  GCAL_A    = 1,
+  GCAL_B    = 2
+};
+
+enum GoalCalPhase : uint8_t {
+  GCAL_WAIT_IDLE = 0,
+  GCAL_RUNNING   = 1,
+  GCAL_DONE      = 2
+};
+
+struct GoalCalState {
+  bool active = false;
+  GoalCalMode mode = GCAL_NONE;
+  GoalCalPhase phase = GCAL_WAIT_IDLE;
+
+  uint8_t scored = 0;
+  uint8_t target = 10;
+
+  uint32_t phaseStartMs = 0;
+  bool lockedAt9 = false;
+
+  uint16_t samples[10];   // raw ADC dla każdej bramki
+} g_goalCal;
 
 
 // ======  13)a ;) sCoinLog: bufor RAM + loader (najnowsze będą liczone z końca) ======
@@ -926,8 +1081,9 @@ const char* settingsItems[] = {
   "Game time >",
   "Goals to win >",
   "Light effects >",
-  "Puck lock >",       
-  "Set date & time >"
+  "Puck lock >",
+  "Set date & time >",
+  "Goal calibration >"
 };
 const uint8_t settingsCount = sizeof(settingsItems)/sizeof(settingsItems[0]);
 
@@ -987,6 +1143,14 @@ static const char* puckLockItems[] = {
   "Unlock now"
 };
 static const uint8_t puckLockCount = sizeof(puckLockItems)/sizeof(puckLockItems[0]);
+
+static const char* goalCalItems[] = {
+  "Auto calibration >",
+  "ADC thresholds >",
+  "Reset to defaults"
+};
+static const uint8_t goalCalCount = sizeof(goalCalItems) / sizeof(goalCalItems[0]);
+
 
 
 
@@ -1157,6 +1321,151 @@ void drawSetDateTime() {
   int segY[6] = { y1, y1, y1, y2, y2, y2 };
 
   tft.drawRect(segX[dt.cursor]-2, segY[dt.cursor]-3, segW[dt.cursor]+4, LINE_H-2, ST77XX_RED);
+}
+
+
+void drawGoalCalMenu() {
+  drawHeader("Goal calibration");
+  tft.setTextWrap(false);
+  tft.setTextSize(1);
+
+  for (uint8_t i = 0; i < goalCalCount; ++i) {
+    int16_t y = TOP_MARGIN + i * LINE_H;
+
+    if (i == selGoalCal) {
+      drawVerticalGradient(0, y - 2, tft.width(), LINE_H, COLOR_SEL_BG, COLOR_BG2);
+      tft.setTextColor(COLOR_SEL_FG);
+    } else {
+      tft.setTextColor(COLOR_FG);
+    }
+
+    tft.setCursor(LEFT_MARGIN, y + SELECT_OFFSET_Y);
+    tft.print(goalCalItems[i]);
+  }
+}
+
+void drawGoalCalRun() {
+  drawHeader(g_goalCal.mode == GCAL_A ? "Auto-cal A" : "Auto-cal B");
+
+  tft.setTextWrap(true);
+  tft.setTextSize(1);
+  tft.setTextColor(COLOR_FG);
+
+  int y = TOP_MARGIN;
+  const int bigspace = LINE_H - 0;   
+  const int smallspace = 10;         
+
+  if (g_goalCal.phase == GCAL_WAIT_IDLE) {
+    tft.setCursor(LEFT_MARGIN, y);
+    tft.print("Please wait 3 sec.");
+    y += LINE_H + 4;
+
+    tft.setCursor(LEFT_MARGIN, y);
+    tft.print("Reading idle ");
+    y += smallspace;
+    tft.setCursor(LEFT_MARGIN, y);
+    tft.print("sensor level...");
+  }
+  else if (g_goalCal.phase == GCAL_RUNNING) {
+    if (g_goalCal.mode == GCAL_A) {
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("Cover Goal B entry");
+      y += smallspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("slot with a towel.");
+
+      y += bigspace;
+
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("Score 10 goals into");
+      y += smallspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("Goal A.");
+      y += bigspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("(the one near");
+      y += smallspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("this unit)");
+      y += bigspace;
+   
+    } else {
+tft.setCursor(LEFT_MARGIN, y);
+      tft.print("Cover Goal A entry");
+      y += smallspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("slot with a towel.");
+
+      y += bigspace;
+
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("Score 10 goals into");
+      y += smallspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("Goal B.");
+      y += bigspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("(the one further");
+      y += smallspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("from this unit)");
+      y += bigspace;
+    }
+
+    y += smallspace;
+
+    tft.setTextWrap(false);
+
+    tft.setCursor(LEFT_MARGIN, y);
+    tft.setTextSize(1);
+    tft.print("Scored goals: ");
+
+    // większa czcionka dla licznika
+    y += smallspace;
+    tft.setCursor(LEFT_MARGIN, y);
+    tft.setTextSize(2);
+    tft.print(g_goalCal.scored);
+    tft.print("/");
+    tft.print(g_goalCal.target);
+
+    // wróć do normalnej czcionki
+    tft.setTextSize(1);
+  }
+  else if (g_goalCal.phase == GCAL_DONE)
+  {
+    tft.setCursor(LEFT_MARGIN, y);
+    if (g_goalCal.mode == GCAL_A) {
+      tft.print("Calibration A");
+      y += bigspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("completed.");
+    } else {
+      tft.print("Calibration B");
+      y += bigspace;
+      tft.setCursor(LEFT_MARGIN, y);
+      tft.print("completed.");
+    }
+  }
+}
+
+void resetAdcDefaults() {
+
+  adcIdle    = ADC_IDLE_DEFAULT;
+  adcBoth    = ADC_BOTH_DEFAULT;
+
+  adcAmin    = ADC_A_MIN_DEFAULT;
+  adcAmax    = ADC_A_MAX_DEFAULT;
+  adcAcenter = ADC_A_CENTER_DEFAULT;
+
+  adcBmin    = ADC_B_MIN_DEFAULT;
+  adcBmax    = ADC_B_MAX_DEFAULT;
+  adcBcenter = ADC_B_CENTER_DEFAULT;
+
+  Serial.println("[ADC] Reset to defaults");
+    adcSettingsSave();
+  sendAdcThresholdsToMain();
+  // odśwież UI
+  g_goalCalUiDirty = true;
 }
 
 // ====================== 17) Ścieżki teł (LittleFS) ======================
@@ -1491,6 +1800,65 @@ static void coinlogRedrawWindowFast() {
 }
 
 
+// rysowanie aktualne stany adc
+
+void drawGoalCalThresholds() {
+  drawHeader("ADC thresholds");
+
+  tft.setTextWrap(false);
+  tft.setTextSize(1);
+  tft.setTextColor(COLOR_FG);
+
+  int y = TOP_MARGIN;
+  const int bigspace = LINE_H - 2;
+  const int smallspace = 10;
+
+  // ===== idle =====
+  tft.setCursor(LEFT_MARGIN, y);
+  tft.print("ADC idle: ");
+  tft.print(adcIdle);
+  y += smallspace;
+
+  tft.setCursor(LEFT_MARGIN, y);
+  tft.print("ADC both: ");
+  tft.print(adcBoth);
+
+  y += bigspace;
+
+  // ===== A =====
+  tft.setCursor(LEFT_MARGIN, y);
+  tft.print("A min: ");
+  tft.print(adcAmin);
+  y += smallspace;
+
+  tft.setCursor(LEFT_MARGIN, y);
+  tft.print("A max: ");
+  tft.print(adcAmax);
+  y += smallspace;
+
+  tft.setCursor(LEFT_MARGIN, y);
+  tft.print("A center: ");
+  tft.print(adcAcenter);
+
+  y += bigspace;
+
+  // ===== B =====
+  tft.setCursor(LEFT_MARGIN, y);
+  tft.print("B min: ");
+  tft.print(adcBmin);
+  y += smallspace;
+
+  tft.setCursor(LEFT_MARGIN, y);
+  tft.print("B max: ");
+  tft.print(adcBmax);
+  y += smallspace;
+
+  tft.setCursor(LEFT_MARGIN, y);
+  tft.print("B center: ");
+  tft.print(adcBcenter);
+}
+
+
 
 
 void coinTotalsRebuildFromLog() {
@@ -1719,30 +2087,53 @@ void redraw() {
 
     // --- ustawienia ---
     case SCR_GAMETIME:
-      drawMenuList("Game time", timeItems, timeCount, selTime, gameTimeIdx, true); break;
+      drawMenuList("Game time", timeItems, timeCount, selTime, gameTimeIdx, true);
+      break;
     case SCR_GOALS:
-      drawMenuList("Goals to win", goalsItems, goalsCount, selGoals, goalsIdx, true); break;
+      drawMenuList("Goals to win", goalsItems, goalsCount, selGoals, goalsIdx, true);
+      break;
     case SCR_LIGHTS:
-      drawMenuList("Light effects", lightsItems, lightsCount, selLights); break;
+      drawMenuList("Light effects", lightsItems, lightsCount, selLights);
+      break;
     case SCR_STROBES:
-      drawMenuList("Strobes", onOffItems, onOffCount, selBin, strobesOn ? 0 : 1, true); break;
+      drawMenuList("Strobes", onOffItems, onOffCount, selBin, strobesOn ? 0 : 1, true);
+      break;
     case SCR_ANIMATION:
-      drawMenuList("Animation", onOffItems, onOffCount, selBin, animOn ? 0 : 1, true); break;
+      drawMenuList("Animation", onOffItems, onOffCount, selBin, animOn ? 0 : 1, true);
+      break;
     case SCR_STANDBY:
-      drawMenuList("Stand-by lights", onOffItems, onOffCount, selBin, standbyOn ? 0 : 1, true); break;
+      drawMenuList("Stand-by lights", onOffItems, onOffCount, selBin, standbyOn ? 0 : 1, true);
+      break;
     case SCR_UVLIGHT:
-      drawMenuList("UV lights", onOffItems, onOffCount, selBin, uvOn ? 0 : 1, true); break;
+      drawMenuList("UV lights", onOffItems, onOffCount, selBin, uvOn ? 0 : 1, true);
+      break;
     case SCR_GOALILLUM:
-      drawMenuList("Goal illumination", onOffItems, onOffCount, selBin, goalIllumOn ? 0 : 1, true); break;
+      drawMenuList("Goal illumination", onOffItems, onOffCount, selBin, goalIllumOn ? 0 : 1, true);
+      break;
     case SCR_SETDT:
-      if (!dt.loaded) setdtLoadFromRTC();
-      drawSetDateTime(); break;
-
-  // puck lock
-      case SCR_PUCKLOCK:
-      drawPuckLockMenu();
+      if (!dt.loaded)
+        setdtLoadFromRTC();
+      drawSetDateTime();
       break;
 
+      // kalibracja
+
+    case SCR_GOALCAL:
+      drawGoalCalMenu();
+      break;
+
+    case SCR_GOALCAL_RUN:
+      drawGoalCalRun();
+      break;
+
+    case SCR_GOALCAL_THRESH:
+      drawGoalCalThresholds();
+      break;
+
+      // puck lock
+    case SCR_PUCKLOCK:
+      drawPuckLockMenu();
+      break;
 
     // --- pozostałe ---
     case SCR_OTHER:
@@ -1773,6 +2164,19 @@ void goBack() {
     previous = current;       // <— też aktualizuj przy „wstecz”
     current  = backStack[--backStackSize];
   }
+}
+
+void dropTopScreenIf(Screen s) {
+  while (backStackSize > 0 && backStack[backStackSize - 1] == s) {
+    backStackSize--;
+  }
+}
+
+
+
+void switchScreenNoBack(Screen next) {
+  previous = current;
+  current = next;
 }
 
 // ====================== 28) Obsługa ustawień / aktywności ======================
@@ -1960,6 +2364,239 @@ int classifyCoinADC(int raw) {
   return -1;                                 // niepewne / szum
 }*/
 
+//kalibracja goli
+void goalCalStart(GoalCalMode mode) {
+  g_goalCalUiDirty = true;
+  g_goalCal.lockedAt9 = false;
+  g_goalCal.active = true;
+  g_goalCal.mode = mode;
+  g_goalCal.scored = 0;
+  g_goalCal.target = 10;
+  g_goalCal.phaseStartMs = millis();
+  memset(g_goalCal.samples, 0, sizeof(g_goalCal.samples));
+
+  // tylko przy A czekamy 3 s i mierzymy idle
+  if (mode == GCAL_A) {
+    g_goalCal.phase = GCAL_WAIT_IDLE;
+  } else {
+    // przy B od razu przechodzimy do zbierania goli
+    g_goalCal.phase = GCAL_RUNNING;
+  }
+
+  Serial.printf("[GCAL] START mode=%s\n", mode == GCAL_A ? "A" : "B");
+  if (mode == GCAL_A) {
+    Serial.println("[GCAL] Wait 3 sec for idle measurement");
+  } else {
+    Serial.println("[GCAL] Skip idle measurement for B");
+  }
+
+  uint8_t calCmd = (mode == GCAL_A) ? CAN_CMD_GOALCAL_START_A : CAN_CMD_GOALCAL_START_B;
+  uint8_t c[1] = { calCmd };
+  canSendStd(CAN_ID_GOALCAL_CMD, c, 1);
+  Serial.printf("[GCAL] sent START_%s to main\n", mode == GCAL_A ? "A" : "B");
+
+  // od razu włącz dmuchawę i odblokuj puck locki
+  Serial.println("[GCAL] blower ON (todo CAN)");
+
+  uint8_t d[3] = { CAN_CMD_PUCKLOCK_NOW, CAN_PUCK_UNLOCK, 0x03 };
+  canSendStd(CAN_ID_PUCKLOCK_CMD, d, 3);
+  Serial.println("[GCAL] puck locks -> UNLOCK ALL");
+
+  enterScreen(SCR_GOALCAL_RUN);
+}
+
+bool adcOrderOk =
+  (adcBoth < adcBcenter) &&
+  (adcBcenter < adcAcenter) &&
+  (adcAcenter < adcIdle);
+
+void goalCalFinish() {
+
+  Serial.printf("[GCAL] COMPLETE mode=%s\n", g_goalCal.mode == GCAL_A ? "A" : "B");
+
+  // ===== pokaż wszystkie próbki =====
+  Serial.println("[GCAL] samples:");
+  for (int i = 0; i < g_goalCal.target; i++) {
+    Serial.printf("[GCAL] sample[%d] = %u\n", i, g_goalCal.samples[i]);
+  }
+
+  // ===== policz center =====
+  uint32_t sum = 0;
+  for (int i = 0; i < g_goalCal.target; i++) {
+    sum += g_goalCal.samples[i];
+  }
+
+  uint16_t center = sum / g_goalCal.target;
+  Serial.printf("[GCAL] center=%u\n", center);
+
+  // ===== jeśli skończyliśmy A, zapisz A i od razu przejdź do B =====
+  if (g_goalCal.mode == GCAL_A) {
+    adcAcenter = center;
+    Serial.printf("[ADC] stored A center = %u\n", adcAcenter);
+
+    showOK("Calibrate B now");
+    delay(1200);
+    redraw();
+    
+
+    goalCalStart(GCAL_B);
+    redraw();
+    return;
+  }
+
+  // ===== jeśli skończyliśmy B, zapisz B =====
+  if (g_goalCal.mode == GCAL_B) {
+    adcBcenter = center;
+    Serial.printf("[ADC] stored B center = %u\n", adcBcenter);
+  }
+
+  // ===== sprawdź poprawność kolejności ADC =====
+  bool adcOrderOk =
+    (adcBoth < adcBcenter) &&
+    (adcBcenter < adcAcenter) &&
+    (adcAcenter < adcIdle);
+
+  if (!adcOrderOk) {
+  Serial.printf(
+    "[GCAL] ERROR wrong calibration order both=%u B=%u A=%u idle=%u\n",
+    adcBoth, adcBcenter, adcAcenter, adcIdle
+  );
+
+  resetAdcDefaults();
+
+  showERROR("Wrong goal sides");
+  delay(1200);
+  redraw();
+goalCalSendCancelToMain();
+g_goalCal = GoalCalState{};
+dropTopScreenIf(SCR_GOALCAL_RUN);
+dropTopScreenIf(SCR_GOALCAL);
+switchScreenNoBack(SCR_GOALCAL);
+redraw();
+  return;
+}
+
+  // ===== przelicz progi =====
+  uint16_t midAB = (adcAcenter + adcBcenter) / 2;
+  uint16_t midAI = (adcAcenter + adcIdle) / 2;
+
+  adcBmin = 700;      // ustalona bezpieczna granica
+  adcBmax = midAB;
+
+  adcAmin = midAB;
+  adcAmax = midAI;
+
+  Serial.println("[ADC] recalculated thresholds:");
+  Serial.printf("B: %u - %u (center %u)\n", adcBmin, adcBmax, adcBcenter);
+  Serial.printf("A: %u - %u (center %u)\n", adcAmin, adcAmax, adcAcenter);
+
+  adcSettingsSave();
+
+// ===== wyślij nowe progi do main =====
+sendAdcThresholdsToMain();
+goalCalSendCancelToMain();
+
+Serial.println("[GCAL] calibration OK");
+
+showOK("Goal calibrated");
+redraw();
+delay(1000);
+
+// wyczyść stan kalibracji
+g_goalCal = GoalCalState{};
+dropTopScreenIf(SCR_GOALCAL_RUN);
+dropTopScreenIf(SCR_GOALCAL);
+switchScreenNoBack(SCR_GOALCAL);
+redraw();
+}
+void goalCalTick() {
+  if (!g_goalCal.active) return;
+
+  if (g_goalCal.phase == GCAL_WAIT_IDLE) {
+    if (millis() - g_goalCal.phaseStartMs >= 3000) {
+      g_goalCal.phase = GCAL_RUNNING;
+      g_goalCal.phaseStartMs = millis();
+      g_goalCalUiDirty = true;
+
+      Serial.printf("[GCAL] idle measured, begin scoring mode=%s\n",
+                    g_goalCal.mode == GCAL_A ? "A" : "B");
+    }
+  }
+
+  if (g_goalCal.phase == GCAL_RUNNING) {
+    if (g_goalCal.scored == 9 && !g_goalCal.lockedAt9) {
+      uint8_t d[3] = { CAN_CMD_PUCKLOCK_NOW, CAN_PUCK_LOCK, 0x03 };
+      canSendStd(CAN_ID_PUCKLOCK_CMD, d, 3);
+      Serial.println("[GCAL] scored=9 -> puck locks LOCK ALL");
+      g_goalCal.lockedAt9 = true;
+    }
+
+    if (g_goalCal.scored >= g_goalCal.target) {
+      goalCalFinish();
+      g_goalCalUiDirty = true;
+    }
+  }
+
+  if (g_goalCal.phase == GCAL_DONE) {
+    if (millis() - g_goalCal.phaseStartMs >= 1500) {
+      Serial.println("[GCAL] return to Goal calibration menu");
+      g_goalCal = GoalCalState{};
+      g_goalCalUiDirty = true;
+      enterScreen(SCR_GOALCAL);
+    }
+  }
+}
+
+
+void goalCalOnAdcSampleFromMain(uint16_t rawAdc) {
+  if (!g_goalCal.active) return;
+  if (g_goalCal.phase != GCAL_RUNNING) return;
+  if (g_goalCal.scored >= g_goalCal.target) return;
+
+  g_goalCal.samples[g_goalCal.scored] = rawAdc;
+  g_goalCal.scored++;
+  g_goalCalUiDirty = true;
+  lastInputTime = millis();
+
+  Serial.printf("[GCAL] sample %u/%u mode=%s rawAdc=%u\n",
+                g_goalCal.scored,
+                g_goalCal.target,
+                g_goalCal.mode == GCAL_A ? "A" : "B",
+                rawAdc);
+}
+
+
+
+
+
+void goalCalCanPoll() {
+  twai_message_t msg;
+
+  while (twai_receive(&msg, 0) == ESP_OK) {
+
+    if (!msg.extd && !msg.rtr &&
+        msg.identifier == CAN_ID_GOALCAL_DATA &&
+        msg.data_length_code >= 3) {
+
+      uint8_t cmd = msg.data[0];
+      uint16_t raw = ((uint16_t)msg.data[1] << 8) | msg.data[2];
+
+      if (cmd == CAN_CMD_GOALCAL_IDLE) {
+        adcIdle = raw;
+        g_goalCalUiDirty = true;
+        Serial.printf("[GCAL] idle from main = %u\n", raw);
+      }
+      else if (cmd == CAN_CMD_GOALCAL_SAMPLE) {
+        goalCalOnAdcSampleFromMain(raw);
+      }
+    }
+
+    // tu później można dopisać inne RX-y, jeśli będą potrzebne
+  }
+}
+
+
+
 
 
 
@@ -2093,6 +2730,10 @@ void checkSerialCommands() {
 }
 
 
+
+
+
+
 // ====================== 31) Setup ======================
 void setup() {
   Serial.begin(115200);
@@ -2151,36 +2792,38 @@ pinMode(COIN_5_PIN, INPUT_PULLUP);
 
   rtcSyncToSystem();
 
-canInit();
+  canInit();
+  sendAdcThresholdsToMain();
   canStopMinigameMusic();
+   goalCalSendCancelToMain();
 
-randomSeed(esp_random() ^ micros() ^ (systemUnix() << 8));
+  randomSeed(esp_random() ^ micros() ^ (systemUnix() << 8));
+  adcSettingsLoad();
 
+  pinMode(LED_PIN, OUTPUT);
+  digitalWrite(LED_PIN, LOW); // LED zgaszona na starcie
 
-pinMode(LED_PIN, OUTPUT);
-digitalWrite(LED_PIN, LOW);   // LED zgaszona na starcie
+  pinMode(TFT_CS, OUTPUT);
+  pinMode(TFT_DC, OUTPUT);
+  // pinMode(TFT_RST, OUTPUT);
+  SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS); // SCK, MISO(nie używasz), MOSI, SS
+  digitalWrite(TFT_CS, HIGH);                // odznacz TFT
 
-pinMode(TFT_CS, OUTPUT);
-pinMode(TFT_DC, OUTPUT);
-//pinMode(TFT_RST, OUTPUT);
-SPI.begin(TFT_SCLK, -1, TFT_MOSI, TFT_CS);   // SCK, MISO(nie używasz), MOSI, SS
-digitalWrite(TFT_CS, HIGH);                  // odznacz TFT
+  tft.initR(INITR_BLACKTAB);
 
-tft.initR(INITR_BLACKTAB);
+  setRotationKeepRGB(0);
 
-setRotationKeepRGB(0);
+  tft.fillScreen(ST77XX_BLACK);
 
-tft.fillScreen(ST77XX_BLACK);
+  redraw();
 
-redraw();
+  bool sdOk = sdInitOnce();
 
-bool sdOk = sdInitOnce();
+  if (sdOk)
+    sdGetCoinCounters(coins2, coins5);
 
-
-
-if (sdOk) sdGetCoinCounters(coins2, coins5);
-
-if (sdOk) sdLoadSettings();
+  if (sdOk)
+    sdLoadSettings();
 
 
   // --- GPIO + TFT ---
@@ -2282,23 +2925,26 @@ checkSerialCommands();
 processCoinQueue();
 
 
-  // auto-wygaszanie po 30 s
-  if (!screenDimmed && (millis() - lastInputTime > 30000UL)) {
-    digitalWrite(LCD_PWR, LOW);  // OFF
-    screenDimmed = true;
-    current = SCR_MAIN;
-    selMain = 0;
-    tft.fillScreen(ST77XX_BLACK);
-  }
-  bool buttonPressed =
-    digitalRead(BTN_UP) == LOW ||
-    digitalRead(BTN_DOWN) == LOW ||
-    digitalRead(BTN_SELECT) == LOW ||
-    digitalRead(BTN_BACK) == LOW;
+// auto-wygaszanie po 30 s
+if (current == SCR_GOALCAL_RUN && g_goalCal.active) {
+  lastInputTime = millis();
+}
+
+if (!screenDimmed && (millis() - lastInputTime > 180000UL)) {
+  digitalWrite(LCD_PWR, LOW);  // OFF
+  screenDimmed = true;
+  current = SCR_MAIN;
+  selMain = 0;
+  tft.fillScreen(ST77XX_BLACK);
+}
+
+bool buttonPressed =
+  digitalRead(BTN_UP) == LOW ||
+  digitalRead(BTN_DOWN) == LOW ||
+  digitalRead(BTN_SELECT) == LOW ||
+  digitalRead(BTN_BACK) == LOW;
 
 digitalWrite(LED_PIN, buttonPressed ? HIGH : LOW);
-
-
 
 
   // aktualizacja przycisków
@@ -2318,6 +2964,8 @@ bool anyHeld = upNow || downNow || selectNow || backNow;
 if (!anyHeld) {
   comboReady = true;
 }
+
+
 
 
 // ===== SECRET COMBOS =====
@@ -2398,6 +3046,12 @@ if (pressedNow(bUp) || repeatNow(bUp)) {
     case SCR_GAMETIME:   selTime      = wrapPrev(selTime,      timeCount);       break;
     case SCR_GOALS:      selGoals     = wrapPrev(selGoals,     goalsCount);      break;
 
+    // Goal Calibration
+    case SCR_GOALCAL:
+      selGoalCal = wrapPrev(selGoalCal, goalCalCount);
+      need = true;
+      break;
+
     // Lista efektów świetlnych
     case SCR_LIGHTS:     selLights    = wrapPrev(selLights,    lightsCount);     break;
 
@@ -2475,6 +3129,12 @@ if (pressedNow(bDown) || repeatNow(bDown)) {
     // Ustawienia czasu i goli
     case SCR_GAMETIME:   selTime      = wrapNext(selTime,      timeCount);       break;
     case SCR_GOALS:      selGoals     = wrapNext(selGoals,     goalsCount);      break;
+
+    // Goal Calibration
+    case SCR_GOALCAL:
+      selGoalCal = wrapNext(selGoalCal, goalCalCount);
+      need = true;
+      break;
 
     // Lista efektów świetlnych
     case SCR_LIGHTS:     selLights    = wrapNext(selLights,    lightsCount);     break;
@@ -2568,18 +3228,34 @@ if (pressedNow(bSelect)) {
 
     // ───────── Settings → podmenu ─────────
     case SCR_SETTINGS:
-      if      (selSettings == 0) {                 // Game time >
-        enterScreen(SCR_GAMETIME); selTime   = gameTimeIdx;
-      } else if (selSettings == 1) {               // Goals to win >
-        enterScreen(SCR_GOALS);    selGoals  = goalsIdx;
-      } else if (selSettings == 2) {               // Light effects >
-        enterScreen(SCR_LIGHTS);   selLights = 0;
-      } else if (selSettings == 3) {               // Puck lock >
-        enterScreen(SCR_PUCKLOCK); selPuckLock = 0;
-      } else if (selSettings == 4) {               // Set date & time >
-        enterScreen(SCR_SETDT);    dt.loaded = false; // wymuś odczyt przy rysowaniu
-      }
+      if      (selSettings == 0) { enterScreen(SCR_GAMETIME);  selTime = gameTimeIdx; }
+      else if (selSettings == 1) { enterScreen(SCR_GOALS);     selGoals = goalsIdx; }
+      else if (selSettings == 2) { enterScreen(SCR_LIGHTS); }
+      else if (selSettings == 3) { enterScreen(SCR_PUCKLOCK);  selPuckLock = puckLockEnabled ? 0 : 1; }
+      else if (selSettings == 4) { enterScreen(SCR_SETDT); }
+      else if (selSettings == 5) { enterScreen(SCR_GOALCAL);   selGoalCal = 0; }
       need = true; break;
+    
+      // Goal calibration menu
+
+case SCR_GOALCAL:
+  if (selGoalCal == 0) {
+    goalCalStart(GCAL_A);   // zaczynamy zawsze od A
+  }
+  else if (selGoalCal == 1) {
+    enterScreen(SCR_GOALCAL_THRESH);
+  }
+  else if (selGoalCal == 2) {
+    resetAdcDefaults();
+    showOK("Defaults restored");
+    delay(800);
+  }
+  need = true;
+  break;
+
+case SCR_GOALCAL_RUN:
+  // podczas kalibracji SELECT nic nie robi
+  break;
 
     // ───────── Puck lock (Enabled/Disabled + komendy) ─────────
     case SCR_PUCKLOCK:
@@ -2722,34 +3398,54 @@ if (pressedNow(bBack)) {
   if (current == SCR_SETDT) {
     setdtPrevFieldOrExit();
     need = true;
+  }
+  else if (current == SCR_GOALCAL_RUN)
+  {
+    Serial.println("[GCAL] CANCEL by user");
+    goalCalSendCancelToMain();
+    // tu później dodasz CAN cancel + blower OFF
+    Serial.println("[GCAL] blower OFF (todo CAN)");
 
-  } else if (current != SCR_MAIN) {
+    uint8_t d[3] = {CAN_CMD_PUCKLOCK_NOW, CAN_PUCK_LOCK, 0x03};
+    canSendStd(CAN_ID_PUCKLOCK_CMD, d, 3);
+    Serial.println("[GCAL] puck locks -> LOCK ALL");
+
+g_goalCal = GoalCalState{};
+dropTopScreenIf(SCR_GOALCAL_RUN);
+dropTopScreenIf(SCR_GOALCAL);
+switchScreenNoBack(SCR_GOALCAL);
+need = true;
+  }
+  else if (current != SCR_MAIN)
+  {
     // obejmuje m.in. SCR_COINLOG i SCR_COINROOT
     goBack();
     need = true;
   }
 }
 
-
-
-  // --- Delikatny odśwież zegara (co minutę) na ekranach z menu/ustawieniami ---
-  bool wantsFooter =
+// --- Delikatny odśwież zegara (co minutę) na ekranach z menu/ustawieniami ---
+bool wantsFooter =
     !(current == SCR_PLAY ||
       current == SCR_MUSICROUND ||
       current == SCR_PLAYCONFIRM ||
-      current == SCR_OTHER||
+      current == SCR_OTHER ||
       current == SCR_COINLOG);
-  if (wantsFooter) {
-    drawFooterClock(false);
-  }
+if (wantsFooter)
+{
+  drawFooterClock(false);
+}
 
 // Marquee tick tylko na ekranie loga
 // --- Marquee tick tylko na ekranie loga ---
-auto coinlogMarqueeTick = [&]() {
-  if (current != SCR_COINLOG) return;
+auto coinlogMarqueeTick = [&]()
+{
+  if (current != SCR_COINLOG)
+    return;
 
   CoinLogEntry e;
-  if (!coinlogGetNewest(selCoinLog, e)) return;
+  if (!coinlogGetNewest(selCoinLog, e))
+    return;
   DateTime dt(e.ts);
 
   char line[64];
@@ -2758,22 +3454,26 @@ auto coinlogMarqueeTick = [&]() {
            dt.day(), dt.month(), dt.year(),
            dt.hour(), dt.minute(), dt.second());
 
-  const int leftX = coinlogLeftXBase();                // <<< NOWE
-  int availW = tft.width() - leftX - 2;                // <<< BYŁO: LEFT_MARGIN
-  int textW  = 6 * (int)strlen(line);
-  if (textW <= availW) return;
+  const int leftX = coinlogLeftXBase(); // <<< NOWE
+  int availW = tft.width() - leftX - 2; // <<< BYŁO: LEFT_MARGIN
+  int textW = 6 * (int)strlen(line);
+  if (textW <= availW)
+    return;
 
   uint32_t now = millis();
 
-  if (coinlogMarqueeX == 0 && (now - coinlogMarqueeLastMs) < (uint32_t)COINLOG_MARQ_PAUSE) return;
+  if (coinlogMarqueeX == 0 && (now - coinlogMarqueeLastMs) < (uint32_t)COINLOG_MARQ_PAUSE)
+    return;
 
-  if (now - coinlogMarqueeLastMs >= 120) {
+  if (now - coinlogMarqueeLastMs >= 120)
+  {
     coinlogMarqueeLastMs = now;
     coinlogMarqueeX += 2;
 
     const int spacer = 24;
     const int wrapAt = textW + spacer;
-    if (coinlogMarqueeX >= wrapAt) {
+    if (coinlogMarqueeX >= wrapAt)
+    {
       coinlogMarqueeX = 0;
       coinlogMarqueeLastMs = now;
     }
@@ -2781,10 +3481,17 @@ auto coinlogMarqueeTick = [&]() {
   }
 };
 coinlogMarqueeTick();
+goalCalTick();
+goalCalCanPoll();
 
+if (current == SCR_GOALCAL_RUN && g_goalCalUiDirty)
+{
+  redraw();
+  g_goalCalUiDirty = false;
+}
 
-
-  if (need) redraw();
+if (need)
+  redraw();
 
 /*// ===== RTC drift diagnostic =====
 static uint32_t lastRtcPrint = 0;
@@ -2813,6 +3520,4 @@ if (millis() - lastRtcPrint > 120000) {   // co 2 minutę
   Serial.print(s.second());
   Serial.println();
 }*/
-
-
 }

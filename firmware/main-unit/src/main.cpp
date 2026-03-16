@@ -131,6 +131,8 @@ static const char *MUSIC_ANIM_PATHS[] = {
 #define CAN_PUCK_UNLOCK 0x02
 #endif
 
+
+
 // parametry ruchu (możesz potem dostroić)
 #ifndef MS_LOCK_MOVE
 #define MS_LOCK_MOVE 70
@@ -533,6 +535,15 @@ static inline void puckTick()
 #define CAN_CMD_PUCKLOCK_NOW 0x40
 #define CAN_PUCK_LOCK 0x01
 #define CAN_PUCK_UNLOCK 0x02
+#define CAN_ID_GOALCAL_CMD   0x350   // settings -> main
+#define CAN_ID_GOALCAL_DATA  0x351   // main -> settings
+
+#define CAN_CMD_GOALCAL_START_A 0x60
+#define CAN_CMD_GOALCAL_START_B 0x61
+#define CAN_CMD_GOALCAL_CANCEL  0x62
+
+#define CAN_CMD_GOALCAL_IDLE    0x63 // main -> settings, payload: [cmd, hi, lo]
+#define CAN_CMD_GOALCAL_SAMPLE  0x64 // main -> settings, payload: [cmd, hi, lo]
 
 // New: scoreboard/events towards Display ESP
 #define CAN_ID_SCORE_UPDATE 0x321 // data: [scoreA, scoreB]
@@ -561,6 +572,27 @@ enum : uint8_t
   F_PUCKLOCK = 5 // enable/disable puck-lock mechanics
 };
 static inline bool flagOn(uint8_t f, uint8_t bit) { return (f >> bit) & 1; }
+
+
+
+
+// kalibracja flagi
+enum GoalCalMainMode : uint8_t {
+  GCALM_NONE = 0,
+  GCALM_A    = 1,
+  GCALM_B    = 2
+};
+
+struct GoalCalMainState {
+  bool active = false;
+  GoalCalMainMode mode = GCALM_NONE;
+  uint32_t startMs = 0;
+  bool idleSent = false;
+};
+
+static GoalCalMainState g_goalCalMain;
+static bool g_goalCalPulseActive = false;
+
 
 // ========================= Settings structure (NVS) =========================
 struct AHSettings
@@ -591,13 +623,13 @@ AHSettings g_set = {1, 1, 0x3F, 0}; // default: 5 min, 5 goals, all features ON 
 #define GOAL_COOLDOWN_MS 500
 
 // ADC THRESH
-// A:
-#define ADC_THRESH_A_MIN 2200
-#define ADC_THRESH_A_MAX 2700
+static uint16_t adcThreshAmin = 2200;
+static uint16_t adcThreshAmax = 3000;
 
-// B:
-#define ADC_THRESH_B_MIN 1200
-#define ADC_THRESH_B_MAX 1500
+static uint16_t adcThreshBmin = 800;
+static uint16_t adcThreshBmax = 1600;
+
+static uint16_t adcIdle = 4095;
 
 // MP3 players (YX5200/DFPlayer-compatible) – two UARTs
 // Music player (background tracks)
@@ -726,6 +758,9 @@ static void sayStart(uint8_t gtype, uint8_t idx)
     break;
   }
 }
+
+
+
 
 // ========================= Settings (NVS) =========================
 static void settingsSaveToNVS()
@@ -1041,6 +1076,8 @@ static void sendGameEvent(uint8_t evt, uint8_t a = 0, uint8_t b = 0)
   twai_transmit(&m, pdMS_TO_TICKS(20));
 }
 
+
+
 // ========================= Game state machine =========================
 
 enum class GState : uint8_t
@@ -1340,18 +1377,22 @@ static const uint32_t BREAK_MS = 5000;
 // Returns: -1 none, 0 = A, 1 = B
 static int8_t classifyGoalADC(int raw)
 {
-  if (raw >= ADC_THRESH_A_MIN && raw <= ADC_THRESH_A_MAX)
+  if (raw >= adcThreshAmin && raw <= adcThreshAmax)
     return 0; // A
-  if (raw >= ADC_THRESH_B_MIN && raw <= ADC_THRESH_B_MAX)
+  if (raw >= adcThreshBmin && raw <= adcThreshBmax)
     return 1; // B
   return -1;
 }
 static uint32_t lastGoalTs = 0;
 static int8_t lastGateLatched = -1; // edge-type lock to avoid double count while signal persists
+static uint32_t lastNoGoalTs = 0;
+static const uint32_t GOAL_RELEASE_MS = 120;
 static int readGoalRaw() { return analogRead(PIN_GOAL_ADC); }
 
-static int8_t pollGoal()
+static int8_t pollGoal(int *rawOut = nullptr)
 {
+  if (rawOut) *rawOut = -1;
+
   // SERIAL injected goal has priority (one-shot)
   if (g_forcedGoal >= 0)
   {
@@ -1361,30 +1402,44 @@ static int8_t pollGoal()
     return g;
   }
 
-  // Cooldown
   uint32_t now = millis();
+
+  // Cooldown
   if (now - lastGoalTs < GOAL_COOLDOWN_MS)
     return -1;
 
   int raw = readGoalRawMedian();
+  if (rawOut) *rawOut = raw;
+
   int8_t g = classifyGoalADC(raw);
+
   if (g >= 0)
   {
-    // simple latch so we count once per pulse
+    // wróciliśmy do aktywnej bramki, więc kasujemy timer "brak gola"
+    lastNoGoalTs = 0;
+
+    // jeśli nadal ten sam przelot, ignoruj
     if (lastGateLatched == g)
-      return -1; // still same pulse
+      return -1;
+
     lastGateLatched = g;
     lastGoalTs = now;
+
     Serial.printf("[GOAL] side=%c (ADC=%d)\n", g == 0 ? 'A' : 'B', raw);
     return g;
   }
-  else
+
+  // g < 0 -> nie zwalniaj latcha od razu, tylko po chwili stabilnego spokoju
+  if (lastGateLatched != -1)
   {
-    lastGateLatched = -1;
+    if (lastNoGoalTs == 0)
+      lastNoGoalTs = now;
+    else if (now - lastNoGoalTs >= GOAL_RELEASE_MS)
+      lastGateLatched = -1;
   }
+
   return -1;
 }
-
 static int8_t pollGoalForGameOver()
 {
   // SERIAL injected goal has priority (one-shot)
@@ -1419,6 +1474,10 @@ static int8_t pollGoalForGameOver()
   Serial.printf("[GOAL] (confirm) side=%c (ADC~%d)\n", g == 0 ? 'A' : 'B', raw0);
   return g;
 }
+
+
+
+
 
 // ========================= Puck-lock logic during round =========================
 
@@ -1650,6 +1709,12 @@ static void serialHandleLine(char *line)
     hardResetToIdle();
     return;
   }
+
+
+
+
+
+  
 
   // ---- ADC debug ----
   if (!strcasecmp(tok[0], "adc"))
@@ -1885,6 +1950,109 @@ static void serialPoll()
   }
 }
 
+
+
+static void sendGoalCalValue(uint8_t cmd, uint16_t raw)
+{
+  twai_message_t m = {};
+  m.identifier = CAN_ID_GOALCAL_DATA;
+  m.data_length_code = 3;
+  m.data[0] = cmd;
+  m.data[1] = (uint8_t)(raw >> 8);
+  m.data[2] = (uint8_t)(raw & 0xFF);
+
+  esp_err_t err = twai_transmit(&m, pdMS_TO_TICKS(20));
+  if (err != ESP_OK) {
+    Serial.printf("[GCAL-MAIN] TX err=%d cmd=0x%02X raw=%u\n", (int)err, cmd, raw);
+  }
+}
+
+static void goalCalMainStart(GoalCalMainMode mode)
+{
+g_goalCalMain.active = true;
+g_goalCalMain.mode = mode;
+g_goalCalMain.startMs = millis();
+
+g_goalCalPulseActive = false;
+
+if (mode == GCALM_A) {
+  g_goalCalMain.idleSent = false;
+  Serial.println("[GCAL-MAIN] idle measurement enabled");
+} else {
+  g_goalCalMain.idleSent = true;
+  Serial.println("[GCAL-MAIN] idle measurement skipped for B");
+}
+
+  lastGateLatched = -1;
+  lastGoalTs = 0;
+  lastNoGoalTs = 0;
+
+  blowerSet(true);
+  puckLockUnlockAll();
+
+  Serial.printf("[GCAL-MAIN] START mode=%s\n", mode == GCALM_A ? "A" : "B");
+}
+
+static void goalCalMainCancel()
+{
+  if (!g_goalCalMain.active) return;
+
+  Serial.println("[GCAL-MAIN] CANCEL");
+  g_goalCalMain = GoalCalMainState{};
+
+  blowerSet(false);
+  puckLockCmd(true, 0x03);
+}
+
+static void goalCalMainTick()
+{
+  if (!g_goalCalMain.active) return;
+
+  uint32_t now = millis();
+
+  if (!g_goalCalMain.idleSent) {
+    if (now - g_goalCalMain.startMs >= 3000) {
+uint16_t idle = (uint16_t)readGoalRawMedian();
+adcIdle = idle;
+sendGoalCalValue(CAN_CMD_GOALCAL_IDLE, idle);
+g_goalCalMain.idleSent = true;
+
+      Serial.printf("[GCAL-MAIN] idle=%u mode=%s\n",
+                    idle,
+                    g_goalCalMain.mode == GCALM_A ? "A" : "B");
+    }
+    return;
+  }
+
+int raw = readGoalRawMedian();
+
+// podczas kalibracji:
+// - NIE klasyfikujemy A/B
+// - NIE używamy progów A/B
+// - bierzemy każde przejście pucka jako próbkę
+// - ale tylko raz na jedno przejście
+
+bool active = (raw < (int)adcIdle - 200);
+
+// wejście w impuls -> wyślij jedną próbkę
+if (active && !g_goalCalPulseActive) {
+  g_goalCalPulseActive = true;
+
+  sendGoalCalValue(CAN_CMD_GOALCAL_SAMPLE, (uint16_t)raw);
+
+  Serial.printf("[GCAL-MAIN] sample mode=%s raw=%d idle=%u\n",
+                g_goalCalMain.mode == GCALM_A ? "A" : "B",
+                raw,
+                adcIdle);
+}
+
+// wyjście z impulsu -> uzbrój na następne przejście pucka
+if (!active) {
+  g_goalCalPulseActive = false;
+}
+}
+
+
 // ANIMACJE led lampa gora z pliku
 static File binFile;
 static bool binPlaying = false;
@@ -1919,6 +2087,35 @@ void binStart(const char *path)
   Serial.println("[BIN] start");
   binPlaying = true;
   binLastFrame = millis(); // lepiej niż 0
+}
+static void adcThreshSaveToNVS()
+{
+  prefs.begin("ah", false);
+  prefs.putUShort("adcAmin", adcThreshAmin);
+  prefs.putUShort("adcAmax", adcThreshAmax);
+  prefs.putUShort("adcBmin", adcThreshBmin);
+  prefs.putUShort("adcBmax", adcThreshBmax);
+  prefs.end();
+
+  Serial.printf("[ADC] saved to NVS A:%u-%u B:%u-%u\n",
+                adcThreshAmin, adcThreshAmax,
+                adcThreshBmin, adcThreshBmax);
+}
+
+static void adcThreshLoadFromNVS()
+{
+  prefs.begin("ah", true);
+
+  adcThreshAmin = prefs.getUShort("adcAmin", 2200);
+  adcThreshAmax = prefs.getUShort("adcAmax", 3000);
+  adcThreshBmin = prefs.getUShort("adcBmin", 800);
+  adcThreshBmax = prefs.getUShort("adcBmax", 1600);
+
+  prefs.end();
+
+  Serial.printf("[ADC] loaded from NVS A:%u-%u B:%u-%u\n",
+                adcThreshAmin, adcThreshAmax,
+                adcThreshBmin, adcThreshBmax);
 }
 
 // ========================= Arduino setup/loop =========================
@@ -2004,6 +2201,7 @@ void setup()
   twai_reconfigure_alerts(TWAI_ALERT_BUS_OFF | TWAI_ALERT_BUS_RECOVERED, nullptr);
 
   settingsLoadFromNVS();
+  adcThreshLoadFromNVS();
   printSettings(g_set);
 
   Serial.printf("\n== CAN RX @250kbps  TX=%d RX=%d ==\n", (int)CAN_TX_PIN, (int)CAN_RX_PIN);
@@ -2021,38 +2219,60 @@ void loop()
   adcWatchPoll();
   musicAutoAdvanceTick();
   binUpdate();
+  goalCalMainTick();
 
   // --- CAN RX ---
   twai_message_t msg;
   if (twai_receive(&msg, pdMS_TO_TICKS(10)) == ESP_OK)
+{
+  bool handled = false;
+
+  puckOnCan(msg);
+
+  // ===== odbiór nowych progów ADC z settings =====
+  if (!msg.extd && !msg.rtr &&
+      msg.identifier == 0x360 &&
+      msg.data_length_code == 8)
   {
+    adcThreshAmin = ((uint16_t)msg.data[0] << 8) | msg.data[1];
+    adcThreshAmax = ((uint16_t)msg.data[2] << 8) | msg.data[3];
+    adcThreshBmin = ((uint16_t)msg.data[4] << 8) | msg.data[5];
+    adcThreshBmax = ((uint16_t)msg.data[6] << 8) | msg.data[7];
 
-    bool handled = false;
+    Serial.printf("[ADC] thresholds updated A:%u-%u B:%u-%u\n",
+                  adcThreshAmin, adcThreshAmax,
+                  adcThreshBmin, adcThreshBmax);
 
-    puckOnCan(msg);
+                  adcThreshSaveToNVS();
 
-    // START GAME
-    if (!msg.extd && !msg.rtr && msg.identifier == CAN_ID_START_GAME && msg.data_length_code >= 3 && msg.data[0] == CAN_CMD_START_GAME)
+    handled = true;
+  }
+
+  // START GAME
+  if (!msg.extd && !msg.rtr &&
+      msg.identifier == CAN_ID_START_GAME &&
+      msg.data_length_code >= 3 &&
+      msg.data[0] == CAN_CMD_START_GAME)
+  {
+    uint8_t gtype = msg.data[1], gindex = msg.data[2];
+    sayStart(gtype, gindex);
+    sendAck();
+    if (gtype == GT_FULL)
     {
-      uint8_t gtype = msg.data[1], gindex = msg.data[2];
-      sayStart(gtype, gindex);
-      sendAck();
-      if (gtype == GT_FULL)
+      gameStartFull(gindex);
+    }
+    else if (gtype == GT_MUSIC)
+    {
+      if (gindex >= 1 && gindex <= 6)
       {
-        gameStartFull(gindex);
-      }
-      else if (gtype == GT_MUSIC)
-      {
-        if (gindex >= 1 && gindex <= 6)
-        {
-          // konkretny motyw
-          g_musicOnlyMode = true;
-          g_theme = (ThemeId)(gindex - 1);
+        // konkretny motyw
+        g_musicOnlyMode = true;
+        g_theme = (ThemeId)(gindex - 1);
 
-          g_fullIndex = 0;
-          g_roundNo = 0;
-          g_roundsWonA = g_roundsWonB = 0;
-          g_round.scoreA = g_round.scoreB = 0;
+        g_fullIndex = 0;
+        g_roundNo = 0;
+        g_roundsWonA = g_roundsWonB = 0;
+        g_round.scoreA = g_round.scoreB = 0;
 
           poolResetTheme();
           g_bgPlaying = false;
@@ -2071,6 +2291,36 @@ void loop()
       else
       {
         Serial.printf("[START] Unknown game type %u\n", gtype);
+      }
+    }
+
+    
+    // Goal calibration control
+    if (!msg.extd && !msg.rtr &&
+        msg.identifier == CAN_ID_GOALCAL_CMD &&
+        msg.data_length_code >= 1)
+    {
+      handled = true;
+
+      switch (msg.data[0]) {
+        case CAN_CMD_GOALCAL_START_A:
+          Serial.println("[CAN] GoalCal START A");
+          goalCalMainStart(GCALM_A);
+          break;
+
+        case CAN_CMD_GOALCAL_START_B:
+          Serial.println("[CAN] GoalCal START B");
+          goalCalMainStart(GCALM_B);
+          break;
+
+        case CAN_CMD_GOALCAL_CANCEL:
+          Serial.println("[CAN] GoalCal CANCEL");
+          goalCalMainCancel();
+          break;
+
+        default:
+          Serial.printf("[CAN] GoalCal unknown cmd=0x%02X\n", msg.data[0]);
+          break;
       }
     }
 
@@ -2538,6 +2788,8 @@ static void gameStartFull(uint8_t index)
   Serial.printf("[GAME] FULL: theme=%s (folder %02u)", THEMES[g_theme].name, THEMES[g_theme].folder);
   g_state = GState::PREPARE;
 }
+
+
 
 static void gameStartMusicOnlyRandom()
 {
