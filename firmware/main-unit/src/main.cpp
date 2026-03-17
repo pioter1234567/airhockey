@@ -549,6 +549,8 @@ static inline void puckTick()
 #define CAN_ID_SCORE_UPDATE 0x321 // data: [scoreA, scoreB]
 #define CAN_ID_GOAL_ANIM 0x322    // data: [side(0=A,1=B), type]
 #define CAN_ID_GAME_EVENT 0x323   // data: [evt, a, b]
+
+#define CAN_ID_ROUND_TIME 0x324   // data: [sec_hi, sec_lo]
 // evt: 0=GameStart, 1=RoundStart, 2=RoundEnd, 3=GameOver, 4=CountdownTick(3..1)
 
 // New: Start-Game we already listen (0x301) → [0x01, gtype, gindex]
@@ -1076,6 +1078,16 @@ static void sendGameEvent(uint8_t evt, uint8_t a = 0, uint8_t b = 0)
   twai_transmit(&m, pdMS_TO_TICKS(20));
 }
 
+static void sendRoundTimeSeconds(uint16_t secs)
+{
+  twai_message_t m = {};
+  m.identifier = CAN_ID_ROUND_TIME;
+  m.data_length_code = 2;
+  m.data[0] = (uint8_t)(secs >> 8);
+  m.data[1] = (uint8_t)(secs & 0xFF);
+  twai_transmit(&m, pdMS_TO_TICKS(20));
+}
+
 
 
 // ========================= Game state machine =========================
@@ -1226,8 +1238,11 @@ static void startNormalRound()
   // Limity czasu/goli
   uint16_t secs = mapTimeIdxToSeconds(g_set.gameTimeIdx);
   g_round.tLimitMs = secs ? (uint32_t)secs * 1000UL : 0;
+  sendRoundTimeSeconds(secs);
+
 #if DEBUG_FORCE_ROUND_TIME_MS
   g_round.tLimitMs = DEBUG_FORCE_ROUND_TIME_MS;
+  sendRoundTimeSeconds((uint16_t)(DEBUG_FORCE_ROUND_TIME_MS / 1000UL));
 #endif
   g_round.timeLimited = (g_round.tLimitMs > 0);
   g_round.goalLimit = mapGoalsIdxToCount(g_set.goalsIdx);
@@ -1274,9 +1289,11 @@ static void startMusicRound()
   // per-theme duration for MUSIC round (theme 1..6 => g_theme 0..5)
   uint8_t ti = (uint8_t)g_theme; // 0..5
   g_round.tLimitMs = MUSIC_ROUND_TIME_MS[ti];
+  sendRoundTimeSeconds((uint16_t)(g_round.tLimitMs / 1000UL));
 
 #if DEBUG_FORCE_ROUND_TIME_MS
   g_round.tLimitMs = DEBUG_FORCE_ROUND_TIME_MS;
+  sendRoundTimeSeconds((uint16_t)(DEBUG_FORCE_ROUND_TIME_MS / 1000UL));
 #endif
 
   g_round.timeLimited = true;
