@@ -3297,7 +3297,7 @@ case SCR_GOALCAL_RUN:
       Screen src = previous; // ustawiony w enterScreen()
       uint8_t gtype, gindex;
       if      (src == SCR_PLAY)        { gtype = GT_FULL;  gindex = (uint8_t)selPlay; }          // 0..5
-      else if (src == SCR_MUSICROUND)  { gtype = GT_MUSIC; gindex = (uint8_t)(selMusic + 1); }   // 1..6
+      else if (src == SCR_MUSICROUND)  { gtype = GT_MUSIC; gindex = (uint8_t)selMusic; }   // 0..5
       else                              { gtype = GT_QUICK; gindex = 0; }
 
       StartSendStatus st = canSendStartGame(gtype, gindex);

@@ -716,50 +716,7 @@ static int readGoalRawMedian()
   return v[2];
 }
 
-static void sayStart(uint8_t gtype, uint8_t idx)
-{
-  switch (gtype)
-  {
-  case GT_FULL:
-    if (idx < FULL_N)
-      Serial.printf("Startuję %s\n", FULL_GAMES[idx]);
-    else
-      Serial.printf("Startuję FULL index=%u\n", idx);
-    break;
-  case GT_MUSIC:
-    switch (idx)
-    {
-    case 1:
-      Serial.println("Startuję MUSIC: 20000lums");
-      break;
-    case 2:
-      Serial.println("Startuję MUSIC: toad");
-      break;
-    case 3:
-      Serial.println("Startuję MUSIC: teensies");
-      break;
-    case 4:
-      Serial.println("Startuję MUSIC: grannies");
-      break;
-    case 5:
-      Serial.println("Startuję MUSIC: fiesta");
-      break;
-    case 6:
-      Serial.println("Startuję MUSIC: olimpus");
-      break;
-    default:
-      Serial.printf("Startuję MUSIC index=%u\n", idx);
-      break;
-    }
-    break;
-  case GT_QUICK:
-    Serial.printf("Startuję QUICK index=%u\n", idx);
-    break;
-  default:
-    Serial.printf("Startuję TYPE=%u index=%u\n", gtype, idx);
-    break;
-  }
-}
+
 
 
 
@@ -937,6 +894,34 @@ static void applyRoundTheme(bool breathing)
 static uint16_t g_usedMask = 0;      // "no repeat" mask for 001..N (N<=8 here)
 static bool g_bgPlaying = false;     // background started for current game?
 static bool g_musicOnlyMode = false; // GT_MUSIC: only music round, no normal rounds
+
+static void sayStart(uint8_t gtype, uint8_t idx)
+{
+  switch (gtype)
+  {
+  case GT_FULL:
+    if (idx < FULL_N)
+      Serial.printf("\nStartuję %s\n", FULL_GAMES[idx]);
+    else
+      Serial.printf("\nStartuję FULL index=%u\n", idx);
+    break;
+  case GT_MUSIC:
+  if (idx < TH_COUNT)
+    Serial.printf("\nStartuję MUSIC: %s\n", THEMES[idx].name);
+  else
+    Serial.printf("\nStartuję MUSIC index=%u\n", idx);
+  
+    break;
+  case GT_QUICK:
+    Serial.printf("\nStartuję QUICK index=%u\n", idx);
+    break;
+  default:
+    Serial.printf("\nStartuję TYPE=%u index=%u\n", gtype, idx);
+    break;
+  }
+}
+
+
 
 static void poolResetTheme() { g_usedMask = 0; }
 
@@ -2278,33 +2263,32 @@ void loop()
     {
       gameStartFull(gindex);
     }
-    else if (gtype == GT_MUSIC)
-    {
-      if (gindex >= 1 && gindex <= 6)
-      {
-        // konkretny motyw
-        g_musicOnlyMode = true;
-        g_theme = (ThemeId)(gindex - 1);
+   else if (gtype == GT_MUSIC)
+{
+  if (gindex < TH_COUNT)
+  {
+    g_musicOnlyMode = true;
+    g_theme = (ThemeId)gindex;
 
-        g_fullIndex = 0;
-        g_roundNo = 0;
-        g_roundsWonA = g_roundsWonB = 0;
-        g_round.scoreA = g_round.scoreB = 0;
+    g_fullIndex = 0;
+    g_roundNo = 0;
+    g_roundsWonA = g_roundsWonB = 0;
+    g_round.scoreA = g_round.scoreB = 0;
 
-          poolResetTheme();
-          g_bgPlaying = false;
+    poolResetTheme();
+    g_bgPlaying = false;
 
-          Serial.printf("[GAME] MUSIC-ONLY: theme=%s (folder %02u)\n",
-                        THEMES[g_theme].name,
-                        THEMES[g_theme].folder);
+    Serial.printf("[GAME] MUSIC-ONLY: theme=%s (folder %02u)\n",
+                  THEMES[g_theme].name,
+                  THEMES[g_theme].folder);
 
-          g_state = GState::PREPARE;
-        }
-        else
-        {
-          gameStartMusicOnlyRandom();
-        }
-      }
+    g_state = GState::PREPARE;
+  }
+  else
+  {
+    gameStartMusicOnlyRandom();
+  }
+}
       else
       {
         Serial.printf("[START] Unknown game type %u\n", gtype);
@@ -2782,12 +2766,10 @@ void binUpdate()
 // ========================= Game start entry points =========================
 static void gameStartFull(uint8_t index)
 {
-  // index może przyjść jako 0..5 (tema) albo 1..6 (folder). Ujednolicamy do 0..5.
-  uint8_t th = 0;
-  if (index >= 1 && index <= 6)
-    th = index - 1; // folder-style
-  else if (index < TH_COUNT)
-    th = index; // theme-style
+  // FULL z CAN/UI przychodzi jako normalny indeks 0..5
+  uint8_t th;
+  if (index < TH_COUNT)
+    th = index;
   else
     th = (uint8_t)random(0, TH_COUNT);
 
@@ -2799,10 +2781,13 @@ static void gameStartFull(uint8_t index)
   g_roundsWonA = g_roundsWonB = 0;
   g_round.scoreA = g_round.scoreB = 0;
 
-  poolResetTheme(); // = g_usedMask = 0
+  poolResetTheme();
   g_bgPlaying = false;
 
-  Serial.printf("[GAME] FULL: theme=%s (folder %02u)", THEMES[g_theme].name, THEMES[g_theme].folder);
+  Serial.printf("[GAME] FULL: theme=%s (folder %02u)\n",
+                THEMES[g_theme].name,
+                THEMES[g_theme].folder);
+
   g_state = GState::PREPARE;
 }
 
