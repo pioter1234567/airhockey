@@ -1,6 +1,7 @@
 #include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
+#include <SD.h>
 #include <Adafruit_GFX.h>
 #include <Adafruit_SH110X.h>
 #include <FS.h>
@@ -19,6 +20,13 @@
 #define SCL2 15
 
 #define OLED_ADDR 0x3C
+
+//SD
+
+#define SD_CS   34   // SCS
+#define SD_MOSI 35   // SDI
+#define SD_MISO 37   // SDO
+#define SD_SCK  36   // CLK
 
 TwoWire I2C2 = TwoWire(1); // Wire1
 Adafruit_SH1106G oled1(128, 64, &Wire, -1);
@@ -63,6 +71,11 @@ static void showDigit(Adafruit_SH1106G &disp, uint8_t d)
 #define TFT_SCK 12
 #define TFT_BL 4
 
+
+#define TFT_BL_PWM_CH   0
+#define TFT_BL_PWM_FREQ 5000
+#define TFT_BL_PWM_RES  8
+
 #define C_BLACK 0x0000
 #define C_WHITE 0xFFFF
 
@@ -88,7 +101,7 @@ public:
     auto bcfg = _bus.config();
     bcfg.spi_host = SPI2_HOST;
     bcfg.spi_mode = 0;
-    bcfg.freq_write = 40000000; // jeśli artefakty → 27000000
+    bcfg.freq_write = 27000000; // jeśli artefakty → 27000000
     bcfg.freq_read = 16000000;
     bcfg.spi_3wire = (TFT_MISO == -1);
     bcfg.use_lock = true;
@@ -123,10 +136,11 @@ public:
 };
 
 LGFX_ILI9488 tft;
-lgfx::LGFX_Sprite spr1(&tft);
-lgfx::LGFX_Sprite spr2(&tft);
-lgfx::LGFX_Sprite spr3(&tft);
-lgfx::LGFX_Sprite spr4(&tft);
+
+
+SPIClass sdSpi(FSPI);
+
+
 
 
 static constexpr int CLOCK_SLOTS = 4;
@@ -179,9 +193,31 @@ static int g_clockAreaH = 120;
 
 
 
-static const char *g_currentBgPath = "/test.jpg";
+static const char *g_currentBgPath = "/test.bin";
 
+// ======================= TEST ANIM =======================
 
+static constexpr int ANIM_X = 192;
+static constexpr int ANIM_Y = 148;
+static constexpr int ANIM_W = 188;
+static constexpr int ANIM_H = 172;
+
+static constexpr const char* ANIM_BASE_PATH   = "/base.bin";
+static constexpr const char* ANIM_MIDDLE_PATH = "/middle.bin";
+static constexpr const char* ANIM_RIGHT_PATH  = "/right.bin";
+static constexpr const char* ANIM_LEFT_PATH   = "/left.bin";
+
+static lgfx::LGFX_Sprite g_animSprMiddle(&tft);
+static lgfx::LGFX_Sprite g_animSprRight(&tft);
+static lgfx::LGFX_Sprite g_animSprLeft(&tft);
+
+static bool g_animSpritesReady = false;
+static bool g_animPlaying = false;
+static uint8_t g_animStep = 0;
+static uint32_t g_animNextAtMs = 0;
+
+static const uint16_t g_animDurMs[4] = { 50, 400, 50, 400 };
+// 0=middle, 1=right, 2=middle, 3=left
 
 // ======================= CAN / SCOREBOARD =======================
 
@@ -207,6 +243,8 @@ static uint8_t g_gameIndex = 0; // z 0x301
 //
 
 static bool g_gameStarted = false;
+static bool g_returnToIdleAfterClockHide = false;
+static uint8_t g_roundNo = 0;
 
 // evt: 0=GameStart, 1=RoundStart, 2=RoundEnd, 3=GameOver, 4=CountdownTick
 // goal type: 1=normal round, 2=music round
@@ -243,46 +281,282 @@ static bool canInit()
   return true;
 }
 
-static bool drawJpgQuartered(const char *path)
+static bool drawRgb565File(const char* path, int w, int h)
 {
-  const int W = tft.width();  // po rotacji u ciebie pewnie 480
-  const int H = tft.height(); // po rotacji 320
-
-  const int halfW = W / 2;
-  const int halfH = H / 2;
-
-  lgfx::LGFX_Sprite *sprites[4] = {&spr1, &spr2, &spr3, &spr4};
-  const int xs[4] = {0, halfW, 0, halfW};
-  const int ys[4] = {0, 0, halfH, halfH};
-
-  for (int i = 0; i < 4; i++)
+  File f = SD.open(path, FILE_READ);
+  if (!f)
   {
-    sprites[i]->setColorDepth(16);
-    sprites[i]->setPsram(true);
+    Serial.printf("[RGB565] open FAIL: %s\n", path);
+    return false;
+  }
 
-    if (!sprites[i]->createSprite(halfW, halfH))
+  const size_t bytesNeeded = (size_t)w * h * 2;
+  uint8_t* buf = (uint8_t*)ps_malloc(bytesNeeded);
+  if (!buf)
+  {
+    Serial.println("[RGB565] ps_malloc FAIL");
+    f.close();
+    return false;
+  }
+
+  size_t rd = f.read(buf, bytesNeeded);
+  f.close();
+
+  if (rd != bytesNeeded)
+  {
+    Serial.printf("[RGB565] read FAIL: got %u need %u\n",
+                  (unsigned)rd, (unsigned)bytesNeeded);
+    free(buf);
+    return false;
+  }
+
+  tft.pushImage(0, 0, w, h, (uint16_t*)buf);
+  free(buf);
+  return true;
+}
+
+static bool loadRgb565RegionToSprite(lgfx::LGFX_Sprite& spr,
+                                     const char* path,
+                                     int imgW, int imgH,
+                                     int srcX, int srcY,
+                                     int regionW, int regionH)
+{
+  if (srcX < 0 || srcY < 0) return false;
+  if (srcX + regionW > imgW) return false;
+  if (srcY + regionH > imgH) return false;
+
+  File f = SD.open(path, FILE_READ);
+  if (!f)
+  {
+    Serial.printf("[RGB565] open FAIL: %s\n", path);
+    return false;
+  }
+
+  uint16_t* lineBuf = (uint16_t*)heap_caps_malloc(regionW * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!lineBuf)
+  {
+    Serial.println("[RGB565] lineBuf alloc FAIL");
+    f.close();
+    return false;
+  }
+
+  for (int y = 0; y < regionH; y++)
+  {
+    size_t offset = ((size_t)(srcY + y) * imgW + srcX) * 2;
+    if (!f.seek(offset))
     {
-      Serial.printf("Sprite %d create FAILED\n", i + 1);
+      Serial.printf("[RGB565] seek FAIL at y=%d\n", y);
+      free(lineBuf);
+      f.close();
       return false;
     }
 
-    sprites[i]->fillScreen(C_BLACK);
-
-    // rysujemy cały JPG z ujemnym offsetem tak,
-    // żeby do sprite'a trafił tylko odpowiedni fragment
-    bool ok = sprites[i]->drawJpgFile(LittleFS, path, -xs[i], -ys[i]);
-    Serial.printf("Quarter %d draw: %s\n", i + 1, ok ? "OK" : "FAIL");
-    if (!ok)
+    size_t need = regionW * 2;
+    size_t rd = f.read((uint8_t*)lineBuf, need);
+    if (rd != need)
+    {
+      Serial.printf("[RGB565] row read FAIL at y=%d got=%u need=%u\n",
+                    y, (unsigned)rd, (unsigned)need);
+      free(lineBuf);
+      f.close();
       return false;
+    }
+
+    spr.pushImage(0, y, regionW, 1, lineBuf);
   }
 
-  // dopiero teraz wypychamy gotowe ćwiartki
-  spr1.pushSprite(0, 0);
-  spr2.pushSprite(halfW, 0);
-  spr3.pushSprite(0, halfH);
-  spr4.pushSprite(halfW, halfH);
-
+  free(lineBuf);
+  f.close();
   return true;
+}
+
+static bool restoreRgb565RegionToScreen(const char* path,
+                                        int imgW, int imgH,
+                                        int srcX, int srcY,
+                                        int dstX, int dstY,
+                                        int regionW, int regionH)
+{
+  File f = SD.open(path, FILE_READ);
+  if (!f)
+  {
+    Serial.printf("[RGB565] open FAIL: %s\n", path);
+    return false;
+  }
+
+  uint16_t* lineBuf = (uint16_t*)heap_caps_malloc(regionW * 2, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+  if (!lineBuf)
+  {
+    Serial.println("[RGB565] lineBuf alloc FAIL");
+    f.close();
+    return false;
+  }
+
+  for (int y = 0; y < regionH; y++)
+  {
+    size_t offset = ((size_t)(srcY + y) * imgW + srcX) * 2;
+    if (!f.seek(offset))
+    {
+      Serial.printf("[RGB565] seek FAIL at y=%d\n", y);
+      free(lineBuf);
+      f.close();
+      return false;
+    }
+
+    size_t need = regionW * 2;
+    size_t rd = f.read((uint8_t*)lineBuf, need);
+    if (rd != need)
+    {
+      Serial.printf("[RGB565] row read FAIL at y=%d got=%u need=%u\n",
+                    y, (unsigned)rd, (unsigned)need);
+      free(lineBuf);
+      f.close();
+      return false;
+    }
+
+    tft.pushImage(dstX, dstY + y, regionW, 1, lineBuf);
+  }
+
+  free(lineBuf);
+  f.close();
+  return true;
+}
+
+
+
+static bool createAnimSpriteFromFile(lgfx::LGFX_Sprite& spr, const char* path, int w, int h)
+{
+  if (spr.getBuffer() != nullptr)
+    spr.deleteSprite();
+
+  spr.setColorDepth(16);
+  spr.setPsram(true);
+
+  if (!spr.createSprite(w, h))
+  {
+    Serial.printf("[ANIM] createSprite FAIL: %s\n", path);
+    return false;
+  }
+
+  File f = SD.open(path, FILE_READ);
+  if (!f)
+  {
+    Serial.printf("[ANIM] open FAIL: %s\n", path);
+    spr.deleteSprite();
+    return false;
+  }
+
+  const size_t need = (size_t)w * h * 2;
+  size_t rd = f.read((uint8_t*)spr.getBuffer(), need);
+  f.close();
+
+  if (rd != need)
+  {
+    Serial.printf("[ANIM] read FAIL: %s got=%u need=%u\n",
+                  path, (unsigned)rd, (unsigned)need);
+    spr.deleteSprite();
+    return false;
+  }
+
+  Serial.printf("[ANIM] sprite loaded: %s\n", path);
+  return true;
+}
+
+static bool loadTestAnimSprites()
+{
+  if (SD.cardType() == CARD_NONE)
+  {
+    Serial.println("[ANIM] no SD");
+    return false;
+  }
+
+  if (!SD.exists(ANIM_MIDDLE_PATH) || !SD.exists(ANIM_RIGHT_PATH) || !SD.exists(ANIM_LEFT_PATH))
+  {
+    Serial.println("[ANIM] missing one of: /middle.bin /right.bin /left.bin");
+    return false;
+  }
+
+  bool ok = true;
+  ok &= createAnimSpriteFromFile(g_animSprMiddle, ANIM_MIDDLE_PATH, ANIM_W, ANIM_H);
+  ok &= createAnimSpriteFromFile(g_animSprRight,  ANIM_RIGHT_PATH,  ANIM_W, ANIM_H);
+  ok &= createAnimSpriteFromFile(g_animSprLeft,   ANIM_LEFT_PATH,   ANIM_W, ANIM_H);
+
+  g_animSpritesReady = ok;
+  Serial.printf("[ANIM] sprites ready: %s\n", ok ? "YES" : "NO");
+  return ok;
+}
+
+static void drawAnimStep(uint8_t step)
+{
+  switch (step)
+  {
+    case 0:
+    case 2:
+      g_animSprMiddle.pushSprite(ANIM_X, ANIM_Y);
+      break;
+
+    case 1:
+      g_animSprRight.pushSprite(ANIM_X, ANIM_Y);
+      break;
+
+    case 3:
+      g_animSprLeft.pushSprite(ANIM_X, ANIM_Y);
+      break;
+  }
+}
+
+static void startTestAnim()
+{
+  if (SD.cardType() == CARD_NONE)
+  {
+    Serial.println("[ANIM] start FAIL: no SD");
+    return;
+  }
+
+  if (!SD.exists(ANIM_BASE_PATH))
+  {
+    Serial.println("[ANIM] start FAIL: missing /base.bin");
+    return;
+  }
+
+  bool ok = drawRgb565File(ANIM_BASE_PATH, 480, 320);
+  Serial.printf("[ANIM] draw base: %s\n", ok ? "OK" : "FAIL");
+  if (!ok)
+    return;
+
+  g_currentBgPath = ANIM_BASE_PATH;
+
+  if (!g_animSpritesReady)
+  {
+    if (!loadTestAnimSprites())
+      return;
+  }
+
+  g_animPlaying = true;
+  g_animStep = 0;
+
+  drawAnimStep(g_animStep);
+  g_animNextAtMs = millis() + g_animDurMs[g_animStep];
+
+  Serial.println("[ANIM] START");
+}
+
+static void stopTestAnim()
+{
+  g_animPlaying = false;
+  Serial.println("[ANIM] STOP");
+}
+
+static void animTick()
+{
+  if (!g_animPlaying)
+    return;
+
+  if ((int32_t)(millis() - g_animNextAtMs) < 0)
+    return;
+
+  g_animStep = (g_animStep + 1) & 0x03; // 0..3 loop
+  drawAnimStep(g_animStep);
+  g_animNextAtMs = millis() + g_animDurMs[g_animStep];
 }
 
 static void updateScoreDisplay()
@@ -358,36 +632,38 @@ static const char *bgPathForGame(uint8_t gameType, uint8_t gameIndex)
   {
     switch (gameIndex)
     {
-    case 0: return "/teensies.jpg";
-    case 1: return "/toad.jpg";
-    case 2: return "/fiesta.jpg";
-    case 3: return "/20000.jpg";
-    case 4: return "/olimpus.jpg";
-    case 5: return "/grannies.jpg";
-    default: return "/test.jpg";
+case 0: return "/teensies.bin";
+case 1: return "/toad.bin";
+case 2: return "/fiesta.bin";
+case 3: return "/20000.bin";
+case 4: return "/olympus.bin";
+case 5: return "/grannies.bin";
+default: return "/test.bin";
     }
   }
 
   if (gameType == 2) // GT_MUSIC
+{
+  switch (gameIndex)
   {
-    switch (gameIndex)
-    {
-    case 1: return "/teensies.jpg";
-    case 2: return "/toad.jpg";
-    case 3: return "/fiesta.jpg";
-    case 4: return "/20000.jpg";
-    case 5: return "/olimpus.jpg";
-    case 6: return "/grannies.jpg";
-    default: return "/test.jpg";
-    }
+case 0: return "/teensies.bin";
+case 1: return "/toad.bin";
+case 2: return "/fiesta.bin";
+case 3: return "/20000.bin";
+case 4: return "/olympus.bin";
+case 5: return "/grannies.bin";
+default: return "/test.bin";
   }
+}
 
-  return "/test.jpg";
+  return "/test.bin";
 }
 
 
 static int clockSlotX(int idx);
 static int clockSlotY();
+static void setBacklight(uint8_t value);
+static void fadeBacklight(uint8_t from, uint8_t to, uint16_t durationMs);
 static bool rebuildClockSlotCaches()
 {
   for (int i = 0; i < CLOCK_SLOTS; i++)
@@ -420,11 +696,23 @@ static bool rebuildClockSlotCaches()
     int x = clockSlotX(i);
     int y = clockSlotY();
 
-    bool ok = g_clockSlotBase[i].drawJpgFile(LittleFS, g_currentBgPath, -x, -y);
+    bool ok = false;
+
+    if (SD.cardType() != CARD_NONE && SD.exists(g_currentBgPath))
+    {
+      ok = loadRgb565RegionToSprite(
+        g_clockSlotBase[i],
+        g_currentBgPath,
+        480, 320,
+        x, y,
+        g_clockSlotW, g_clockSlotH
+      );
+    }
+
     if (!ok)
     {
-      Serial.printf("[CLOCK] base slot %d jpg FAIL\n", i);
-      return false;
+      Serial.printf("[CLOCK] base slot %d bin FAIL -> fallback BLACK\n", i);
+      g_clockSlotBase[i].fillScreen(C_BLACK);
     }
 
     g_clockSlotWork[i].setColorDepth(16);
@@ -436,7 +724,6 @@ static bool rebuildClockSlotCaches()
       return false;
     }
 
-    // ważne: jeśli używasz vlw, załaduj ten sam font też do sprite'a
     if (LittleFS.exists("/Rayman72.vlw"))
     {
       g_clockSlotWork[i].loadFont(LittleFS, "/Rayman72.vlw");
@@ -469,24 +756,34 @@ static int clockSlotY()
 static void applyGameBackground()
 {
   const char *newPath = bgPathForGame(g_gameType, g_gameIndex);
-
-  if (!LittleFS.exists(newPath))
-  {
-    Serial.printf("[BG] missing %s, fallback /test.jpg\n", newPath);
-    newPath = "/test.jpg";
-  }
-
   g_currentBgPath = newPath;
 
-  bool ok = drawJpgQuartered(g_currentBgPath);
-  Serial.printf("[BG] draw %s -> %s\n", g_currentBgPath, ok ? "OK" : "FAIL");
+  bool ok = false;
 
-rebuildClockSlotCaches();
+  if (SD.cardType() != CARD_NONE && SD.exists(g_currentBgPath))
+  {
+    fadeBacklight(255, 0, 120);
+ok = drawRgb565File(g_currentBgPath, 480, 320);
+fadeBacklight(0, 255, 140);
+  }
 
-  g_clockLastText = ""; // po zmianie tła wymuś pełne przerysowanie zegara
+  if (!ok)
+  {
+    Serial.printf("[BG] draw %s FAIL -> fallback BLACK\n", g_currentBgPath);
+    tft.fillScreen(C_BLACK);
+  }
+  else
+  {
+    Serial.printf("[BG] draw %s -> OK\n", g_currentBgPath);
+  }
+
+  if (!rebuildClockSlotCaches())
+  {
+    Serial.println("[CLOCK] cache rebuild FAIL, but continue");
+  }
+
+  g_clockLastText = "";
 }
-
-
 
 static void drawClockCharToSlot(int idx, char ch)
 {
@@ -628,20 +925,23 @@ static void clearClockArea()
   int x = (tft.width()  - totalW) / 2;
   int y = (tft.height() - totalH) / 2;
 
-  lgfx::LGFX_Sprite spr(&tft);
+  bool ok = false;
 
-  spr.setColorDepth(16);
-  spr.setPsram(true);
+  if (SD.cardType() != CARD_NONE && SD.exists(g_currentBgPath))
+  {
+    ok = restoreRgb565RegionToScreen(
+      g_currentBgPath,
+      480, 320,
+      x, y,
+      x, y,
+      totalW, totalH
+    );
+  }
 
-  if (!spr.createSprite(totalW, totalH))
-    return;
-
-  bool ok = spr.drawJpgFile(LittleFS, g_currentBgPath, -x, -y);
-
-  if (ok)
-    spr.pushSprite(x, y);
-
-  spr.deleteSprite();
+  if (!ok)
+  {
+    tft.fillRect(x, y, totalW, totalH, C_BLACK);
+  }
 }
 
 
@@ -676,11 +976,12 @@ static void onGameEvent(uint8_t evt, uint8_t a, uint8_t b)
     Serial.println("[GAME] start");
     break;
 
-  case 1: // RoundStart
-    g_gameStarted = true;
-    Serial.printf("[ROUND] start #%u\n", a);
-    updateScoreDisplay();
-    break;
+case 1: // RoundStart
+  g_gameStarted = true;
+  g_roundNo = a;
+  Serial.printf("[ROUND] start #%u\n", a);
+  updateScoreDisplay();
+  break;
 
 case 2: // RoundEnd
 {
@@ -693,16 +994,21 @@ case 2: // RoundEnd
   // to traktujemy to jako koniec przez czas
   bool endedByTime = (g_clockLastShownSec == 0) || (remMs <= 999);
 
-  if (endedByTime)
-  {
-    g_clockLastText = "";
-    g_clockLastShownSec = 0;
-    drawClockText("0:00");
+if (endedByTime)
+{
+  g_clockLastText = "";
+  g_clockLastShownSec = 0;
+  drawClockText("0:00");
 
-    g_clockActive = false;
-    g_clockHideScheduled = true;
-    g_clockHideAtMs = now + 5000;
-  }
+  g_clockActive = false;
+  g_clockHideScheduled = true;
+  g_clockHideAtMs = now + 5000;
+
+  bool isStandaloneMusic = (g_gameType == 2);
+  bool isFinalRoundOfFullGame = (g_gameType == 1 && g_roundNo >= 3);
+
+  g_returnToIdleAfterClockHide = (isStandaloneMusic || isFinalRoundOfFullGame);
+}
   else
   {
     // koniec przez punkty -> zostaw to co jest na ekranie
@@ -714,12 +1020,54 @@ case 2: // RoundEnd
   break;
 }
 
-  case 3: // GameOver
-    Serial.println("[GAME] OVER");
-    g_gameStarted = false;
-    stopClock();
+case 3: // GameOver
+  Serial.println("[GAME] OVER");
+
+  g_gameStarted = false;
+  stopClock();
+
+  // jeśli powrót do idle już jest zaplanowany po schowaniu zegara,
+  // to tutaj nie rób nic więcej
+  if (g_returnToIdleAfterClockHide)
+  {
     updateScoreDisplay();
     break;
+  }
+
+  // jeśli już jesteśmy na test.bin, też nic nie rób
+  if (strcmp(g_currentBgPath, "/test.bin") == 0)
+  {
+    updateScoreDisplay();
+    break;
+  }
+
+  g_clockLastText = "";
+  g_returnToIdleAfterClockHide = false;
+  g_currentBgPath = "/test.bin";
+
+  if (SD.cardType() != CARD_NONE && SD.exists(g_currentBgPath))
+  {
+    fadeBacklight(255, 0, 120);
+    bool ok = drawRgb565File(g_currentBgPath, 480, 320);
+    fadeBacklight(0, 255, 140);
+
+    Serial.printf("[BG] game over -> %s: %s\n",
+                  g_currentBgPath,
+                  ok ? "OK" : "FAIL");
+
+    if (ok)
+      rebuildClockSlotCaches();
+    else
+      tft.fillScreen(C_BLACK);
+  }
+  else
+  {
+    Serial.println("[BG] game over -> /test.bin missing on SD");
+    tft.fillScreen(C_BLACK);
+  }
+
+  updateScoreDisplay();
+  break;
 
   case 4:                                 // CountdownTick
     Serial.printf("[COUNTDOWN] %u\n", a); // a = 3,2,1
@@ -744,18 +1092,7 @@ case CAN_ID_START_GAME:
 
     Serial.printf("[START] type=%u index=%u\n", g_gameType, g_gameIndex);
 
-    g_currentBgPath = bgPathForGame(g_gameType, g_gameIndex);
-
-    if (!LittleFS.exists(g_currentBgPath))
-    {
-      Serial.printf("[BG] missing %s, fallback /test.jpg\n", g_currentBgPath);
-      g_currentBgPath = "/test.jpg";
-    }
-
-bool okBg = drawJpgQuartered(g_currentBgPath);
-Serial.printf("[BG] draw %s -> %s\n", g_currentBgPath, okBg ? "OK" : "FAIL");
-
-rebuildClockSlotCaches();
+applyGameBackground();
 g_clockLastText = "";
 
 g_clockHideScheduled = false;
@@ -867,6 +1204,12 @@ static void handleSerialCommand(char *line)
     return;
   }
 
+    if (strcmp(line, "anim") == 0)
+  {
+    startTestAnim();
+    return;
+  }
+
   if (strcmp(line, "goal a") == 0)
   {
     if (g_scoreA < 99)
@@ -904,7 +1247,7 @@ static void handleSerialCommand(char *line)
   }
 
   Serial.printf("[SERIAL] unknown command: %s\n", line);
-  Serial.println("[SERIAL] commands: start | stop | reset | goal a | goal b | s <A> <B>");
+  Serial.println("[SERIAL] commands: start | stop | reset | anim | anim stop | goal a | goal b | s <A> <B>");
 }
 
 static void handleSerialInjection()
@@ -945,9 +1288,83 @@ void listFiles() {
     Serial.println(file.size());
     file = root.openNextFile();
   }
+  
 }
 
 
+void listSdFiles()
+{
+  File root = SD.open("/");
+  if (!root || !root.isDirectory())
+  {
+    Serial.println("[SD] open root FAIL");
+    return;
+  }
+
+  File file = root.openNextFile();
+  while (file)
+  {
+    Serial.print("[SD] FILE: ");
+    Serial.print(file.name());
+    Serial.print("  SIZE: ");
+    Serial.println(file.size());
+    file = root.openNextFile();
+  }
+}
+
+
+static bool sdInit()
+{
+  sdSpi.begin(SD_SCK, SD_MISO, SD_MOSI, SD_CS);
+
+  if (!SD.begin(SD_CS, sdSpi))
+  {
+    Serial.println("[SD] mount FAIL");
+    return false;
+  }
+
+  uint8_t cardType = SD.cardType();
+  if (cardType == CARD_NONE)
+  {
+    Serial.println("[SD] no card");
+    return false;
+  }
+
+  Serial.print("[SD] card type: ");
+  switch (cardType)
+  {
+    case CARD_MMC:  Serial.println("MMC"); break;
+    case CARD_SD:   Serial.println("SDSC"); break;
+    case CARD_SDHC: Serial.println("SDHC/SDXC"); break;
+    default:        Serial.println("UNKNOWN"); break;
+  }
+
+  uint64_t cardSizeMB = SD.cardSize() / (1024ULL * 1024ULL);
+  Serial.printf("[SD] size: %llu MB\n", cardSizeMB);
+
+  listSdFiles();
+  return true;
+}
+
+
+
+static void setBacklight(uint8_t value)
+{
+  ledcWrite(TFT_BL_PWM_CH, value);
+}
+
+static void fadeBacklight(uint8_t from, uint8_t to, uint16_t durationMs)
+{
+  const int steps = 24;
+  int delta = (int)to - (int)from;
+
+  for (int i = 0; i <= steps; i++)
+  {
+    uint8_t v = from + (delta * i) / steps;
+    ledcWrite(TFT_BL_PWM_CH, v);
+    delay(durationMs / steps);
+  }
+}
 
 void setup()
 {
@@ -967,8 +1384,9 @@ void setup()
   oled2.display();
 
   // --- TFT ---
-  pinMode(TFT_BL, OUTPUT);
-  digitalWrite(TFT_BL, LOW); // jeśli masz inwersję BL → LOW
+ledcSetup(TFT_BL_PWM_CH, TFT_BL_PWM_FREQ, TFT_BL_PWM_RES);
+ledcAttachPin(TFT_BL, TFT_BL_PWM_CH);
+ledcWrite(TFT_BL_PWM_CH, 0);   // start z wygaszonym podświetleniem
 
   if (!tft.begin())
   {
@@ -989,26 +1407,59 @@ if (!LittleFS.begin()) {
 }
 
 
+//SD init
 
-  if (!LittleFS.exists("/test.jpg"))
-  {
-    Serial.println("Brak /test.jpg w LittleFS");
-    return;
-  }
+if (!sdInit())
+{
+  Serial.println("[SD] init failed");
+}
+else
+{
+  Serial.println("[SD] init OK");
+}
 
+
+bool haveTestBg = false;
+
+if (SD.cardType() == CARD_NONE)
+{
+  Serial.println("SD nie dziala - start na czarnym tle");
+}
+else if (!SD.exists("/test.bin"))
+{
+  Serial.println("Brak /test.bin na SD - start na czarnym tle");
+}
+else
+{
+  haveTestBg = true;
+}
 
 
 
   Serial.printf("PSRAM size: %u\n", ESP.getPsramSize());
   Serial.printf("Free PSRAM: %u\n", ESP.getFreePsram());
 
-  g_currentBgPath = "/test.jpg";
-  bool ok = drawJpgQuartered(g_currentBgPath);
-  Serial.printf("drawJpgQuartered: %s\n", ok ? "OK" : "FAIL");
-  rebuildClockSlotCaches();
-  g_clockLastText = "";
+bool ok = false;
 
-  digitalWrite(TFT_BL, HIGH);
+if (haveTestBg)
+{
+  g_currentBgPath = "/test.bin";
+  fadeBacklight(255, 0, 120);
+ok = drawRgb565File(g_currentBgPath, 480, 320);
+fadeBacklight(0, 255, 140);
+  Serial.printf("drawRgb565File: %s\n", ok ? "OK" : "FAIL");
+}
+else
+{
+  g_currentBgPath = "";
+  tft.fillScreen(C_BLACK);
+  Serial.println("[BG] fallback BLACK");
+}
+
+rebuildClockSlotCaches();
+g_clockLastText = "";
+
+ledcWrite(TFT_BL_PWM_CH, 255); // pełna jasność
 
   if (!canInit())
   {
@@ -1022,9 +1473,6 @@ if (!LittleFS.begin()) {
     g_fontLoaded = tft.loadFont(LittleFS, "/Rayman72.vlw");
     Serial.printf("loadFont: %s\n", g_fontLoaded ? "OK" : "FAIL");
 
-    if (g_fontLoaded) {
-      drawClockText("4:21");   // placeholder startowy
-    }
   }
 
   updateScoreDisplay();
@@ -1033,7 +1481,7 @@ if (!LittleFS.begin()) {
 void loop()
 {
   handleSerialInjection();
-
+  animTick();
   twai_message_t msg;
 
   while (twai_receive(&msg, 0) == ESP_OK)
@@ -1053,12 +1501,46 @@ void loop()
   }
 
   clockTick();
-  if (g_clockHideScheduled)
+if (g_clockHideScheduled)
 {
   if ((int32_t)(millis() - g_clockHideAtMs) >= 0)
   {
-    clearClockArea();
     g_clockHideScheduled = false;
+
+    if (g_returnToIdleAfterClockHide)
+    {
+      g_returnToIdleAfterClockHide = false;
+      g_clockLastText = "";
+      g_currentBgPath = "/test.bin";
+
+      fadeBacklight(255, 0, 120);
+
+      clearClockArea();
+
+      if (SD.cardType() != CARD_NONE && SD.exists(g_currentBgPath))
+      {
+        bool ok = drawRgb565File(g_currentBgPath, 480, 320);
+        Serial.printf("[BG] after clock hide -> %s: %s\n",
+                      g_currentBgPath,
+                      ok ? "OK" : "FAIL");
+
+        if (ok)
+          rebuildClockSlotCaches();
+        else
+          tft.fillScreen(C_BLACK);
+      }
+      else
+      {
+        Serial.println("[BG] after clock hide -> /test.bin missing on SD");
+        tft.fillScreen(C_BLACK);
+      }
+
+      fadeBacklight(0, 255, 140);
+    }
+    else
+    {
+      clearClockArea();
+    }
   }
 }
 }

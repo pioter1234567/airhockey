@@ -87,7 +87,7 @@ static const char *GLOOGLOO_PATH = "/anims/gloogloo.bin"; // "20.000 lums under 
 static const char *TEENSIES_PATH = "/anims/teensies.bin";
 static const char *GRANNIES_PATH = "/anims/grannies.bin";
 static const char *FIESTA_PATH = "/anims/fiesta.bin";
-static const char *OLIMPUS_PATH = "/anims/olimpus.bin";
+static const char *OLYMPUS_PATH = "/anims/olympus.bin";
 
 // Mapowanie: theme -> animacja BIN dla rundy MUSIC
 // Uwaga: jeśli pliku nie ma na SD, binStart() wypisze błąd i nic nie zagra (bez crasha).
@@ -96,7 +96,7 @@ static const char *MUSIC_ANIM_PATHS[] = {
     TOAD_PATH,     // TH_TOAD
     FIESTA_PATH,   // TH_FIESTA
     GLOOGLOO_PATH, // TH_20000
-    OLIMPUS_PATH,  // TH_OLIMPUS
+    OLYMPUS_PATH,  // TH_OLYMPUS
     GRANNIES_PATH, // TH_GRANNIES
 };
 
@@ -819,7 +819,7 @@ static void mp3PlayFolderFile(HardwareSerial &ser, uint8_t folder /*01..99*/, ui
 // 02=toad
 // 03=fiesta
 // 04=20000lums
-// 05=olimpus
+// 05=olympus
 // 06=grannies
 // File 010.mp3 = music round
 // Files 001..N = normal background tracks
@@ -829,7 +829,7 @@ enum ThemeId : uint8_t
   TH_TOAD = 1,
   TH_FIESTA = 2,
   TH_20000 = 3,
-  TH_OLIMPUS = 4,
+  TH_OLYMPUS = 4,
   TH_GRANNIES = 5,
   TH_COUNT = 6
 };
@@ -846,17 +846,17 @@ static const ThemeInfo THEMES[TH_COUNT] = {
     {"toad", 2, 5},
     {"fiesta", 3, 4},
     {"20000lums", 4, 7},
-    {"olimpus", 5, 6},
+    {"olympus", 5, 6},
     {"grannies", 6, 6},
 };
 
 // Music-round duration per theme (theme 1..6 -> g_theme 0..5)
 static const uint32_t MUSIC_ROUND_TIME_MS[TH_COUNT] = {
-    114000UL, // teensies   1:54
+    4000UL, // teensies   1:54 //114000
     86000UL,  // toad       1:26
     85000UL,  // fiesta     1:25
     100000UL, // 20000lums  1:40
-    101000UL, // olimpus    1:41
+    101000UL, // olympus    1:41
     96000UL   // grannies   1:36
 };
 
@@ -879,7 +879,7 @@ static void applyRoundTheme(bool breathing)
   case TH_20000:
     animsSetRoundColor(0, 50, 70);
     break; // ciemny morski
-  case TH_OLIMPUS:
+  case TH_OLYMPUS:
     animsSetRoundColor(150, 0, 255);
     break; // fiolet
   case TH_GRANNIES:
