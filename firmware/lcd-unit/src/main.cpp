@@ -9,7 +9,9 @@
 #include <LovyanGFX.hpp>
 #include "driver/twai.h"
 #include <string.h>
+#include "anims.h"
 #include "Rayman_Origins72pt7b.h"
+#include "display.h"
 
 // --- OLEDy (Adafruit) ---
 
@@ -90,50 +92,6 @@ static void showDigit(Adafruit_SH1106G &disp, uint8_t d)
 #define CAN_ID_GAME_EVENT 0x323   // [evt, a, b]
 #define CAN_ID_ROUND_TIME 0x324   // [sec_hi, sec_lo]
 
-class LGFX_ILI9488 : public lgfx::LGFX_Device
-{
-  lgfx::Bus_SPI _bus;
-  lgfx::Panel_ILI9488 _panel;
-
-public:
-  LGFX_ILI9488()
-  {
-    auto bcfg = _bus.config();
-    bcfg.spi_host = SPI2_HOST;
-    bcfg.spi_mode = 0;
-    bcfg.freq_write = 27000000; // jeśli artefakty → 27000000
-    bcfg.freq_read = 16000000;
-    bcfg.spi_3wire = (TFT_MISO == -1);
-    bcfg.use_lock = true;
-    bcfg.dma_channel = 1;
-    bcfg.pin_sclk = TFT_SCK;
-    bcfg.pin_mosi = TFT_MOSI;
-    bcfg.pin_miso = TFT_MISO;
-    bcfg.pin_dc = TFT_DC;
-    _bus.config(bcfg);
-    _panel.setBus(&_bus);
-
-    auto pcfg = _panel.config();
-    pcfg.pin_cs = TFT_CS;
-    pcfg.pin_rst = TFT_RST;
-    pcfg.pin_busy = -1;
-    pcfg.panel_width = 320;
-    pcfg.panel_height = 480;
-    pcfg.offset_x = 0;
-    pcfg.offset_y = 0;
-    pcfg.offset_rotation = 0;
-    pcfg.dummy_read_pixel = 8;
-    pcfg.dummy_read_bits = 1;
-    pcfg.readable = (TFT_MISO != -1);
-    pcfg.invert = false;
-    pcfg.rgb_order = false;
-    pcfg.dlen_16bit = false;
-    pcfg.bus_shared = false;
-    _panel.config(pcfg);
-
-    setPanel(&_panel);
-  }
-};
 
 LGFX_ILI9488 tft;
 
@@ -193,31 +151,9 @@ static int g_clockAreaH = 120;
 
 
 
-static const char *g_currentBgPath = "/test.bin";
+const char *g_currentBgPath = "/test.bin";
 
-// ======================= TEST ANIM =======================
 
-static constexpr int ANIM_X = 192;
-static constexpr int ANIM_Y = 148;
-static constexpr int ANIM_W = 188;
-static constexpr int ANIM_H = 172;
-
-static constexpr const char* ANIM_BASE_PATH   = "/base.bin";
-static constexpr const char* ANIM_MIDDLE_PATH = "/middle.bin";
-static constexpr const char* ANIM_RIGHT_PATH  = "/right.bin";
-static constexpr const char* ANIM_LEFT_PATH   = "/left.bin";
-
-static lgfx::LGFX_Sprite g_animSprMiddle(&tft);
-static lgfx::LGFX_Sprite g_animSprRight(&tft);
-static lgfx::LGFX_Sprite g_animSprLeft(&tft);
-
-static bool g_animSpritesReady = false;
-static bool g_animPlaying = false;
-static uint8_t g_animStep = 0;
-static uint32_t g_animNextAtMs = 0;
-
-static const uint16_t g_animDurMs[4] = { 50, 400, 50, 400 };
-// 0=middle, 1=right, 2=middle, 3=left
 
 // ======================= CAN / SCOREBOARD =======================
 
@@ -281,7 +217,7 @@ static bool canInit()
   return true;
 }
 
-static bool drawRgb565File(const char* path, int w, int h)
+bool drawRgb565File(const char* path, int w, int h)
 {
   File f = SD.open(path, FILE_READ);
   if (!f)
@@ -423,141 +359,6 @@ static bool restoreRgb565RegionToScreen(const char* path,
 
 
 
-static bool createAnimSpriteFromFile(lgfx::LGFX_Sprite& spr, const char* path, int w, int h)
-{
-  if (spr.getBuffer() != nullptr)
-    spr.deleteSprite();
-
-  spr.setColorDepth(16);
-  spr.setPsram(true);
-
-  if (!spr.createSprite(w, h))
-  {
-    Serial.printf("[ANIM] createSprite FAIL: %s\n", path);
-    return false;
-  }
-
-  File f = SD.open(path, FILE_READ);
-  if (!f)
-  {
-    Serial.printf("[ANIM] open FAIL: %s\n", path);
-    spr.deleteSprite();
-    return false;
-  }
-
-  const size_t need = (size_t)w * h * 2;
-  size_t rd = f.read((uint8_t*)spr.getBuffer(), need);
-  f.close();
-
-  if (rd != need)
-  {
-    Serial.printf("[ANIM] read FAIL: %s got=%u need=%u\n",
-                  path, (unsigned)rd, (unsigned)need);
-    spr.deleteSprite();
-    return false;
-  }
-
-  Serial.printf("[ANIM] sprite loaded: %s\n", path);
-  return true;
-}
-
-static bool loadTestAnimSprites()
-{
-  if (SD.cardType() == CARD_NONE)
-  {
-    Serial.println("[ANIM] no SD");
-    return false;
-  }
-
-  if (!SD.exists(ANIM_MIDDLE_PATH) || !SD.exists(ANIM_RIGHT_PATH) || !SD.exists(ANIM_LEFT_PATH))
-  {
-    Serial.println("[ANIM] missing one of: /middle.bin /right.bin /left.bin");
-    return false;
-  }
-
-  bool ok = true;
-  ok &= createAnimSpriteFromFile(g_animSprMiddle, ANIM_MIDDLE_PATH, ANIM_W, ANIM_H);
-  ok &= createAnimSpriteFromFile(g_animSprRight,  ANIM_RIGHT_PATH,  ANIM_W, ANIM_H);
-  ok &= createAnimSpriteFromFile(g_animSprLeft,   ANIM_LEFT_PATH,   ANIM_W, ANIM_H);
-
-  g_animSpritesReady = ok;
-  Serial.printf("[ANIM] sprites ready: %s\n", ok ? "YES" : "NO");
-  return ok;
-}
-
-static void drawAnimStep(uint8_t step)
-{
-  switch (step)
-  {
-    case 0:
-    case 2:
-      g_animSprMiddle.pushSprite(ANIM_X, ANIM_Y);
-      break;
-
-    case 1:
-      g_animSprRight.pushSprite(ANIM_X, ANIM_Y);
-      break;
-
-    case 3:
-      g_animSprLeft.pushSprite(ANIM_X, ANIM_Y);
-      break;
-  }
-}
-
-static void startTestAnim()
-{
-  if (SD.cardType() == CARD_NONE)
-  {
-    Serial.println("[ANIM] start FAIL: no SD");
-    return;
-  }
-
-  if (!SD.exists(ANIM_BASE_PATH))
-  {
-    Serial.println("[ANIM] start FAIL: missing /base.bin");
-    return;
-  }
-
-  bool ok = drawRgb565File(ANIM_BASE_PATH, 480, 320);
-  Serial.printf("[ANIM] draw base: %s\n", ok ? "OK" : "FAIL");
-  if (!ok)
-    return;
-
-  g_currentBgPath = ANIM_BASE_PATH;
-
-  if (!g_animSpritesReady)
-  {
-    if (!loadTestAnimSprites())
-      return;
-  }
-
-  g_animPlaying = true;
-  g_animStep = 0;
-
-  drawAnimStep(g_animStep);
-  g_animNextAtMs = millis() + g_animDurMs[g_animStep];
-
-  Serial.println("[ANIM] START");
-}
-
-static void stopTestAnim()
-{
-  g_animPlaying = false;
-  Serial.println("[ANIM] STOP");
-}
-
-static void animTick()
-{
-  if (!g_animPlaying)
-    return;
-
-  if ((int32_t)(millis() - g_animNextAtMs) < 0)
-    return;
-
-  g_animStep = (g_animStep + 1) & 0x03; // 0..3 loop
-  drawAnimStep(g_animStep);
-  g_animNextAtMs = millis() + g_animDurMs[g_animStep];
-}
 
 static void updateScoreDisplay()
 {
@@ -1204,11 +1005,17 @@ static void handleSerialCommand(char *line)
     return;
   }
 
-    if (strcmp(line, "anim") == 0)
-  {
-    startTestAnim();
-    return;
-  }
+if (strcmp(line, "anim") == 0)
+{
+  animsStartTest();
+  return;
+}
+
+if (strcmp(line, "anim stop") == 0)
+{
+  animsStop();
+  return;
+}
 
   if (strcmp(line, "goal a") == 0)
   {
@@ -1474,14 +1281,14 @@ ledcWrite(TFT_BL_PWM_CH, 255); // pełna jasność
     Serial.printf("loadFont: %s\n", g_fontLoaded ? "OK" : "FAIL");
 
   }
-
+ animsInit();
   updateScoreDisplay();
 }
 
 void loop()
 {
   handleSerialInjection();
-  animTick();
+  animsTick();
   twai_message_t msg;
 
   while (twai_receive(&msg, 0) == ESP_OK)
@@ -1501,6 +1308,7 @@ void loop()
   }
 
   clockTick();
+ 
 if (g_clockHideScheduled)
 {
   if ((int32_t)(millis() - g_clockHideAtMs) >= 0)
