@@ -759,6 +759,49 @@ static void clearClockArea()
 }
 
 
+static bool g_oledClearScheduled = false;
+static uint32_t g_oledClearAtMs = 0;
+
+static void clearScoreDisplays()
+{
+  oled1.clearDisplay();
+  oled1.display();
+
+  oled2.clearDisplay();
+  oled2.display();
+}
+
+static void scheduleOledClear(uint16_t delayMs)
+{
+  g_oledClearScheduled = true;
+  g_oledClearAtMs = millis() + delayMs;
+}
+
+static void cancelOledClearSchedule()
+{
+  g_oledClearScheduled = false;
+  g_oledClearAtMs = 0;
+}
+
+static void oledTick()
+{
+  if (!g_oledClearScheduled)
+    return;
+
+  if ((int32_t)(millis() - g_oledClearAtMs) < 0)
+    return;
+
+  g_oledClearScheduled = false;
+  g_oledClearAtMs = 0;
+
+  clearScoreDisplays();
+
+  // po zakończeniu gry przygotuj stan pod następną grę,
+  // żeby nie mignął stary wynik przed 0:0
+  g_scoreA = 0;
+  g_scoreB = 0;
+}
+
 static void onScoreChanged()
 {
   Serial.printf("[SCORE] %u:%u\n", g_scoreA, g_scoreB);
@@ -786,13 +829,15 @@ static void onGameEvent(uint8_t evt, uint8_t a, uint8_t b)
 
   switch (evt)
   {
-  case 0: // GameStart
-    Serial.println("[GAME] start");
-    break;
+case 0: // GameStart
+  cancelOledClearSchedule();
+  Serial.println("[GAME] start");
+  break;
 
 case 1: // RoundStart
   g_gameStarted = true;
   g_roundNo = a;
+  cancelOledClearSchedule();
   Serial.printf("[ROUND] start #%u\n", a);
   updateScoreDisplay();
   break;
@@ -840,10 +885,25 @@ case 3: // GameOver
 
   stopClock();
   g_clockLastText = "";
-    fadeBacklight(255, 0, 120);
+
+  // a,b = finalny wynik meczu/rund
+  g_scoreA = a;
+  g_scoreB = b;
+  g_gameStarted = true;
+  updateScoreDisplay();
+
+  cancelOledClearSchedule();
+
+  // najpierw OLED pokazuje wynik, dopiero potem fadeout
+  fadeBacklight(255, 0, 120);
 
   animsStartResult(a, b);
-    fadeBacklight(0, 255, 140);
+
+  fadeBacklight(0, 255, 140);
+
+  // po zakończeniu fadein odczekaj jeszcze czas ms i wyczyść OLED-y
+  scheduleOledClear(2200);
+
   break;
 }
 
@@ -852,6 +912,11 @@ case 3: // GameOver
     break;
   }
 }
+
+
+
+
+
 
 static void handleCanFrame(const twai_message_t &msg)
 {
@@ -1276,10 +1341,23 @@ ledcWrite(TFT_BL_PWM_CH, 255); // pełna jasność
   updateScoreDisplay();
 }
 
+
+
+
 void loop()
 {
+static uint32_t last = 0;
+static uint32_t count = 0;
+  count++;
+if (millis() - last >= 1000)
+{
+  Serial.printf("Loop/s: %u\n", count);
+  count = 0;
+  last = millis();
+}
+
   handleSerialInjection();
-  animsTick();
+  
   twai_message_t msg;
 
   while (twai_receive(&msg, 0) == ESP_OK)
@@ -1299,6 +1377,8 @@ void loop()
   }
 
   clockTick();
+  animsTick();
+  oledTick();
  
 
 }
