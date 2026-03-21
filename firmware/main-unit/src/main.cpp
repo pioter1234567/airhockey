@@ -1311,13 +1311,11 @@ static void startMusicRound()
   animsSetMode(ANIM_ROUND);
 }
 
-static void endRound()
+static void endRound(bool finalGameOver = false)
 {
-  // NIE zatrzymujemy muzyki po rundzie – ma lecieć między rundami
-  // musicStop();
-  // Decide round winner
   binStop();
-  uint8_t winner = 2; // 0=A,1=B,2=draw
+
+  uint8_t winner = 2;
   if (g_round.scoreA > g_round.scoreB)
   {
     winner = 0;
@@ -1328,8 +1326,17 @@ static void endRound()
     winner = 1;
     g_roundsWonB++;
   }
-  sendGameEvent(2, g_round.scoreA, g_round.scoreB); // RoundEnd (a,b)
-  Serial.printf("[ROUND] end. score %u:%u | roundsWon A=%u B=%u\n", g_round.scoreA, g_round.scoreB, g_roundsWonA, g_roundsWonB);
+
+  sendGameEvent(2, g_round.scoreA, g_round.scoreB); // RoundEnd
+
+  if (finalGameOver)
+  {
+    sendGameEvent(3, g_round.scoreA, g_round.scoreB); // GameOver od razu po ostatniej rundzie
+  }
+
+  Serial.printf("[ROUND] end. score %u:%u | roundsWon A=%u B=%u\n",
+                g_round.scoreA, g_round.scoreB,
+                g_roundsWonA, g_roundsWonB);
 }
 
 static void startCountdown()
@@ -2547,16 +2554,18 @@ void loop()
       animsOnGoal(1, 800);
     }
 
-    if (millis() - g_round.tStart >= g_round.tLimitMs)
-    {
-      endRound();
-      lightsSetMode(0);
-      puckLockCmd(true, 0x03);
-      g_state = GState::GAME_OVER;
-      g_gameOverT0 = millis();
-      g_gameOverGuardUntilMs = millis() + 500;
-      musicPlayFolderFile(6, 11);
-    }
+if (millis() - g_round.tStart >= g_round.tLimitMs)
+{
+  endRound();
+  sendGameEvent(3, g_roundsWonA, g_roundsWonB);
+
+  lightsSetMode(0);
+  puckLockCmd(true, 0x03);
+  g_state = GState::GAME_OVER;
+  g_gameOverT0 = millis();
+  g_gameOverGuardUntilMs = millis() + 500;
+  musicPlayFolderFile(6, 11);
+}
   }
   break;
 
@@ -2570,7 +2579,7 @@ void loop()
       blowerSet(false);
       Serial.println("[BLOWER] GameOver timeout 3 min → OFF");
       // spójnie z zachowaniem „po golu”:
-      sendGameEvent(3, g_roundsWonA, g_roundsWonB);
+      
       g_state = GState::WAIT_PUCK_CLEAR;
     }
     // Lights: full off → leave ambient 10%
@@ -2581,13 +2590,7 @@ void loop()
       goLightsApplied = true;
     }
     int8_t goal = pollGoalForGameOver();
-    if (goal >= 0)
-    {
-      blowerSet(false);
-      sendGameEvent(3, g_roundsWonA, g_roundsWonB);
-      g_state = GState::WAIT_PUCK_CLEAR;
-      goLightsApplied = false; // reset na przyszłość
-    }
+
 
     // (tu: ustaw ambient 10% w Twoim sterowniku)
     // Blower: pozostaje ON aż krążek wpadnie do bramki
@@ -2596,6 +2599,7 @@ void loop()
     {
       blowerSet(false);
       sendGameEvent(3, g_roundsWonA, g_roundsWonB);
+       goLightsApplied = false; // reset na przyszłość
       g_state = GState::WAIT_PUCK_CLEAR;
     }
   }

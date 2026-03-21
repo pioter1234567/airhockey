@@ -55,3 +55,4 @@ public:
 };
 
 extern LGFX_ILI9488 tft;
+void fadeBacklight(uint8_t from, uint8_t to, uint16_t durationMs);

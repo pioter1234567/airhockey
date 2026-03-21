@@ -1,28 +1,25 @@
 #include "anims.h"
 #include "display.h"
+#include "unit_config.h"
 #include <Arduino.h>
 #include <SD.h>
 #include <LovyanGFX.hpp>
+#include <stdio.h>
+#include <string.h>
 
-
-
-// funkcja już istnieje w main.cpp
 extern bool drawRgb565File(const char* path, int w, int h);
-
-// aktualne tło też trzymasz w main.cpp
 extern const char *g_currentBgPath;
+static uint32_t g_animEndAtMs = 0;
 
-// ======================= TEST ANIM =======================
+// ======================= LAYOUT =======================
 
 static constexpr int ANIM_X = 192;
 static constexpr int ANIM_Y = 148;
 static constexpr int ANIM_W = 188;
 static constexpr int ANIM_H = 172;
 
-static constexpr const char* ANIM_BASE_PATH   = "/base.bin";
-static constexpr const char* ANIM_MIDDLE_PATH = "/middle.bin";
-static constexpr const char* ANIM_RIGHT_PATH  = "/right.bin";
-static constexpr const char* ANIM_LEFT_PATH   = "/left.bin";
+// middle, right, middle, left
+static const uint16_t g_animDurMs[4] = { 30, 500, 50, 500 };
 
 static lgfx::LGFX_Sprite g_animSprMiddle(&tft);
 static lgfx::LGFX_Sprite g_animSprRight(&tft);
@@ -33,8 +30,75 @@ static bool g_animPlaying = false;
 static uint8_t g_animStep = 0;
 static uint32_t g_animNextAtMs = 0;
 
-// middle, right, middle, left
-static const uint16_t g_animDurMs[4] = { 30, 500, 50, 500 };
+// aktualnie załadowany zestaw
+static char g_basePath[96]   = "";
+static char g_middlePath[96] = "";
+static char g_rightPath[96]  = "";
+static char g_leftPath[96]   = "";
+
+// ======================= LOGIKA =======================
+
+enum class CharacterId : uint8_t
+{
+  A = 0,
+  B = 1
+};
+
+enum class Mood : uint8_t
+{
+  Sad = 0,
+  Happy = 1
+};
+
+struct AnimSet
+{
+  char base[96];
+  char middle[96];
+  char right[96];
+  char left[96];
+};
+
+static const char* charFolder(CharacterId ch)
+{
+
+// A -> /rayman
+// B -> /globox
+return (ch == CharacterId::A) ? "/rayman" : "/globox";
+}
+
+static Mood computeMood(uint8_t selfScore, uint8_t otherScore)
+{
+  if (selfScore == otherScore)
+    return (selfScore == 0) ? Mood::Sad : Mood::Happy;
+
+  return (selfScore > otherScore) ? Mood::Happy : Mood::Sad;
+}
+
+static bool isStateValid(uint8_t score, Mood mood)
+{
+  if (score > 3) return false;
+  if (score == 0 && mood == Mood::Happy) return false;
+  if (score == 3 && mood == Mood::Sad)   return false;
+  return true;
+}
+
+static bool buildAnimSet(AnimSet& out, CharacterId ch, uint8_t score, Mood mood)
+{
+  if (!isStateValid(score, mood))
+    return false;
+
+  const char* folder = charFolder(ch);
+  const char* moodStr = (mood == Mood::Happy) ? "happy" : "sad";
+
+  snprintf(out.base,   sizeof(out.base),   "%s/base_%u_%s.bin",   folder, score, moodStr);
+  snprintf(out.middle, sizeof(out.middle), "%s/middle_%u_%s.bin", folder, score, moodStr);
+  snprintf(out.right,  sizeof(out.right),  "%s/right_%u_%s.bin",  folder, score, moodStr);
+  snprintf(out.left,   sizeof(out.left),   "%s/left_%u_%s.bin",   folder, score, moodStr);
+
+  return true;
+}
+
+// ======================= SPRITES =======================
 
 static bool createAnimSpriteFromFile(lgfx::LGFX_Sprite& spr, const char* path, int w, int h)
 {
@@ -74,7 +138,7 @@ static bool createAnimSpriteFromFile(lgfx::LGFX_Sprite& spr, const char* path, i
   return true;
 }
 
-static bool loadTestAnimSprites()
+static bool loadCurrentAnimSprites()
 {
   if (SD.cardType() == CARD_NONE)
   {
@@ -82,16 +146,19 @@ static bool loadTestAnimSprites()
     return false;
   }
 
-  if (!SD.exists(ANIM_MIDDLE_PATH) || !SD.exists(ANIM_RIGHT_PATH) || !SD.exists(ANIM_LEFT_PATH))
+  if (!SD.exists(g_middlePath) || !SD.exists(g_rightPath) || !SD.exists(g_leftPath))
   {
-    Serial.println("[ANIM] missing one of: /middle.bin /right.bin /left.bin");
+    Serial.println("[ANIM] missing one of current sprite files");
+    Serial.println(g_middlePath);
+    Serial.println(g_rightPath);
+    Serial.println(g_leftPath);
     return false;
   }
 
   bool ok = true;
-  ok &= createAnimSpriteFromFile(g_animSprMiddle, ANIM_MIDDLE_PATH, ANIM_W, ANIM_H);
-  ok &= createAnimSpriteFromFile(g_animSprRight,  ANIM_RIGHT_PATH,  ANIM_W, ANIM_H);
-  ok &= createAnimSpriteFromFile(g_animSprLeft,   ANIM_LEFT_PATH,   ANIM_W, ANIM_H);
+  ok &= createAnimSpriteFromFile(g_animSprMiddle, g_middlePath, ANIM_W, ANIM_H);
+  ok &= createAnimSpriteFromFile(g_animSprRight,  g_rightPath,  ANIM_W, ANIM_H);
+  ok &= createAnimSpriteFromFile(g_animSprLeft,   g_leftPath,   ANIM_W, ANIM_H);
 
   g_animSpritesReady = ok;
   Serial.printf("[ANIM] sprites ready: %s\n", ok ? "YES" : "NO");
@@ -117,6 +184,51 @@ static void drawAnimStep(uint8_t step)
   }
 }
 
+static bool startAnimFromSet(const AnimSet& set)
+{
+  if (SD.cardType() == CARD_NONE)
+  {
+    Serial.println("[ANIM] start FAIL: no SD");
+    return false;
+  }
+
+  if (!SD.exists(set.base))
+  {
+    Serial.printf("[ANIM] missing base: %s\n", set.base);
+    return false;
+  }
+
+  strncpy(g_basePath,   set.base,   sizeof(g_basePath)   - 1);
+  strncpy(g_middlePath, set.middle, sizeof(g_middlePath) - 1);
+  strncpy(g_rightPath,  set.right,  sizeof(g_rightPath)  - 1);
+  strncpy(g_leftPath,   set.left,   sizeof(g_leftPath)   - 1);
+
+  g_basePath[sizeof(g_basePath) - 1]     = 0;
+  g_middlePath[sizeof(g_middlePath) - 1] = 0;
+  g_rightPath[sizeof(g_rightPath) - 1]   = 0;
+  g_leftPath[sizeof(g_leftPath) - 1]     = 0;
+
+  bool ok = drawRgb565File(g_basePath, 480, 320);
+  Serial.printf("[ANIM] draw base: %s -> %s\n", g_basePath, ok ? "OK" : "FAIL");
+  if (!ok)
+    return false;
+
+  g_currentBgPath = g_basePath;
+
+  if (!loadCurrentAnimSprites())
+    return false;
+
+  g_animPlaying = true;
+  g_animStep = 0;
+  drawAnimStep(g_animStep);
+  g_animNextAtMs = millis() + g_animDurMs[g_animStep];
+
+  Serial.println("[ANIM] START");
+  return true;
+}
+
+// ======================= API =======================
+
 void animsInit()
 {
   g_animSpritesReady = false;
@@ -127,38 +239,51 @@ void animsInit()
 
 void animsStartTest()
 {
-  if (SD.cardType() == CARD_NONE)
+  // stary prosty test zostawiamy jako fallback:
+  AnimSet set{};
+  strncpy(set.base,   "/base.bin",   sizeof(set.base) - 1);
+  strncpy(set.middle, "/middle.bin", sizeof(set.middle) - 1);
+  strncpy(set.right,  "/right.bin",  sizeof(set.right) - 1);
+  strncpy(set.left,   "/left.bin",   sizeof(set.left) - 1);
+
+  startAnimFromSet(set);
+}
+
+void animsStartStateTest(uint8_t scoreA, uint8_t scoreB, char whichChar)
+{
+  CharacterId ch;
+  uint8_t selfScore, otherScore;
+
+  if (whichChar == 'a' || whichChar == 'A')
   {
-    Serial.println("[ANIM] start FAIL: no SD");
+    ch = CharacterId::A;
+    selfScore = scoreA;
+    otherScore = scoreB;
+  }
+  else
+  {
+    ch = CharacterId::B;
+    selfScore = scoreB;
+    otherScore = scoreA;
+  }
+
+  Mood mood = computeMood(selfScore, otherScore);
+
+  AnimSet set{};
+  if (!buildAnimSet(set, ch, selfScore, mood))
+  {
+    Serial.printf("[ANIM] invalid state: ch=%c self=%u other=%u\n",
+                  whichChar, selfScore, otherScore);
     return;
   }
 
-  if (!SD.exists(ANIM_BASE_PATH))
-  {
-    Serial.println("[ANIM] start FAIL: missing /base.bin");
-    return;
-  }
+  Serial.printf("[ANIM] state test: ch=%c self=%u other=%u mood=%s\n",
+                whichChar,
+                selfScore,
+                otherScore,
+                (mood == Mood::Happy) ? "happy" : "sad");
 
-  bool ok = drawRgb565File(ANIM_BASE_PATH, 480, 320);
-  Serial.printf("[ANIM] draw base: %s\n", ok ? "OK" : "FAIL");
-  if (!ok)
-    return;
-
-  g_currentBgPath = ANIM_BASE_PATH;
-
-  if (!g_animSpritesReady)
-  {
-    if (!loadTestAnimSprites())
-      return;
-  }
-
-  g_animPlaying = true;
-  g_animStep = 0;
-
-  drawAnimStep(g_animStep);
-  g_animNextAtMs = millis() + g_animDurMs[g_animStep];
-
-  Serial.println("[ANIM] START");
+  startAnimFromSet(set);
 }
 
 void animsStop()
@@ -183,4 +308,30 @@ void animsTick()
   g_animStep = (g_animStep + 1) & 0x03;
   drawAnimStep(g_animStep);
   g_animNextAtMs = millis() + g_animDurMs[g_animStep];
+    // KONIEC ANIMACJI
+if (g_animEndAtMs != 0 && (int32_t)(millis() - g_animEndAtMs) >= 0)
+{
+  g_animEndAtMs = 0;
+
+  Serial.println("[ANIM] RESULT END -> fade + test.bin");
+
+    fadeBacklight(255, 0, 120);
+  
+
+  g_animPlaying = false;
+
+  g_currentBgPath = "/test.bin";
+  drawRgb565File(g_currentBgPath, 480, 320);
+
+  fadeBacklight(0, 255, 140);
+  return;
+}
+}
+
+void animsStartResult(uint8_t scoreA, uint8_t scoreB)
+{
+  char who = (UNIT_SIDE == 'A') ? 'a' : 'b';
+  animsStartStateTest(scoreA, scoreB, who);
+
+  g_animEndAtMs = millis() + 13000; // ile sekund
 }

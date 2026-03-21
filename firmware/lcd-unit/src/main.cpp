@@ -1,3 +1,9 @@
+//============================================================//
+//                                                            //
+//  BEFORE UPLOADING THIS PROGRAM CHECK UNIT_CONFIGURATION.H  //
+//                                                            //
+//============================================================//
+
 #include <Arduino.h>
 #include <Wire.h>
 #include <SPI.h>
@@ -12,6 +18,11 @@
 #include "anims.h"
 #include "Rayman_Origins72pt7b.h"
 #include "display.h"
+#include "unit_config.h"
+
+
+
+
 
 // --- OLEDy (Adafruit) ---
 
@@ -61,6 +72,35 @@ static void showDigit(Adafruit_SH1106G &disp, uint8_t d)
   disp.drawXBitmap(0, 0, B.bits, B.w, B.h, SH110X_WHITE);
   disp.display();
 }
+
+static void showScoreOnDisplay(Adafruit_SH1106G &disp, uint8_t score)
+{
+  disp.clearDisplay();
+
+  if (score <= 9)
+  {
+    showDigit(disp, score);
+    return;
+  }
+
+  disp.setTextWrap(false);
+  disp.setTextSize(6);
+  disp.setTextColor(SH110X_WHITE);
+
+  String s = String(score);
+
+  int16_t x1, y1;
+  uint16_t w, h;
+  disp.getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
+
+  int x = (disp.width()  - w) / 2 - x1 + 2;
+  int y = (disp.height() - h) / 2 - y1;
+
+  disp.setCursor(x, y);
+  disp.print(s);
+  disp.display();
+}
+
 
 // ======================= TFT (ILI9488 + LovyanGFX) =======================
 
@@ -362,7 +402,6 @@ static bool restoreRgb565RegionToScreen(const char* path,
 
 static void updateScoreDisplay()
 {
-
   if (!g_gameStarted)
   {
     oled1.clearDisplay();
@@ -373,55 +412,28 @@ static void updateScoreDisplay()
     return;
   }
 
-  // ===== A =====
-  oled1.clearDisplay();
+  uint8_t scoreForOled1;
+  uint8_t scoreForOled2;
 
-if (g_scoreA <= 9) {
-  showDigit(oled1, g_scoreA);
-} else {
-  oled1.clearDisplay();
-  oled1.setTextWrap(false);
-  oled1.setTextSize(6);
-  oled1.setTextColor(SH110X_WHITE);
+  if (UNIT_SIDE == 'A')
+  {
+    // unit A:
+    // OLED1 = score A
+    // OLED2 = score B
+    scoreForOled1 = g_scoreA;
+    scoreForOled2 = g_scoreB;
+  }
+  else
+  {
+    // unit B:
+    // OLED1 = score B
+    // OLED2 = score A
+    scoreForOled1 = g_scoreB;
+    scoreForOled2 = g_scoreA;
+  }
 
-  String s = String(g_scoreA);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-  oled1.getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
-
-  int x = (oled1.width()  - w) / 2 - x1 + 2;
-  int y = (oled1.height() - h) / 2 - y1;
-
-  oled1.setCursor(x, y);
-  oled1.print(s);
-  oled1.display();
-}
-
-// ===== B =====
-oled2.clearDisplay();
-
-if (g_scoreB <= 9) {
-  showDigit(oled2, g_scoreB);
-} else {
-  oled2.setTextWrap(false);
-  oled2.setTextSize(6);
-  oled2.setTextColor(SH110X_WHITE);
-
-  String s = String(g_scoreB);
-
-  int16_t x1, y1;
-  uint16_t w, h;
-  oled2.getTextBounds(s, 0, 0, &x1, &y1, &w, &h);
-
-  int x = (oled1.width()  - w) / 2 - x1 + 2;
-  int y = (oled2.height() - h) / 2 - y1;
-
-  oled2.setCursor(x, y);
-  oled2.print(s);
-  oled2.display();
-}
-
+  showScoreOnDisplay(oled1, scoreForOled1);
+  showScoreOnDisplay(oled2, scoreForOled2);
 }
 
 static const char *bgPathForGame(uint8_t gameType, uint8_t gameIndex)
@@ -464,7 +476,6 @@ default: return "/test.bin";
 static int clockSlotX(int idx);
 static int clockSlotY();
 static void setBacklight(uint8_t value);
-static void fadeBacklight(uint8_t from, uint8_t to, uint16_t durationMs);
 static bool rebuildClockSlotCaches()
 {
   for (int i = 0; i < CLOCK_SLOTS; i++)
@@ -564,7 +575,9 @@ static void applyGameBackground()
   if (SD.cardType() != CARD_NONE && SD.exists(g_currentBgPath))
   {
     fadeBacklight(255, 0, 120);
+    
 ok = drawRgb565File(g_currentBgPath, 480, 320);
+   
 fadeBacklight(0, 255, 140);
   }
 
@@ -822,53 +835,17 @@ if (endedByTime)
 }
 
 case 3: // GameOver
-  Serial.println("[GAME] OVER");
+{
+  Serial.printf("[GAME] OVER rounds %u:%u\n", a, b);
 
-  g_gameStarted = false;
   stopClock();
-
-  // jeśli powrót do idle już jest zaplanowany po schowaniu zegara,
-  // to tutaj nie rób nic więcej
-  if (g_returnToIdleAfterClockHide)
-  {
-    updateScoreDisplay();
-    break;
-  }
-
-  // jeśli już jesteśmy na test.bin, też nic nie rób
-  if (strcmp(g_currentBgPath, "/test.bin") == 0)
-  {
-    updateScoreDisplay();
-    break;
-  }
-
   g_clockLastText = "";
-  g_returnToIdleAfterClockHide = false;
-  g_currentBgPath = "/test.bin";
-
-  if (SD.cardType() != CARD_NONE && SD.exists(g_currentBgPath))
-  {
     fadeBacklight(255, 0, 120);
-    bool ok = drawRgb565File(g_currentBgPath, 480, 320);
+
+  animsStartResult(a, b);
     fadeBacklight(0, 255, 140);
-
-    Serial.printf("[BG] game over -> %s: %s\n",
-                  g_currentBgPath,
-                  ok ? "OK" : "FAIL");
-
-    if (ok)
-      rebuildClockSlotCaches();
-    else
-      tft.fillScreen(C_BLACK);
-  }
-  else
-  {
-    Serial.println("[BG] game over -> /test.bin missing on SD");
-    tft.fillScreen(C_BLACK);
-  }
-
-  updateScoreDisplay();
   break;
+}
 
   case 4:                                 // CountdownTick
     Serial.printf("[COUNTDOWN] %u\n", a); // a = 3,2,1
@@ -1017,6 +994,20 @@ if (strcmp(line, "anim stop") == 0)
   return;
 }
 
+  int sa, sb;
+  char who;
+  if (sscanf(line, "animstate %d %d %c", &sa, &sb, &who) == 3)
+  {
+    if (sa < 0) sa = 0;
+    if (sb < 0) sb = 0;
+    if (sa > 3) sa = 3;
+    if (sb > 3) sb = 3;
+
+    animsStartStateTest((uint8_t)sa, (uint8_t)sb, who);
+    return;
+  }
+
+
   if (strcmp(line, "goal a") == 0)
   {
     if (g_scoreA < 99)
@@ -1054,7 +1045,7 @@ if (strcmp(line, "anim stop") == 0)
   }
 
   Serial.printf("[SERIAL] unknown command: %s\n", line);
-  Serial.println("[SERIAL] commands: start | stop | reset | anim | anim stop | goal a | goal b | s <A> <B>");
+  Serial.println("[SERIAL] commands: start | stop | reset | anim | anim stop | animstate <A> <B> <a|b> | goal a | goal b | s <A> <B>");
 }
 
 static void handleSerialInjection()
@@ -1160,7 +1151,7 @@ static void setBacklight(uint8_t value)
   ledcWrite(TFT_BL_PWM_CH, value);
 }
 
-static void fadeBacklight(uint8_t from, uint8_t to, uint16_t durationMs)
+void fadeBacklight(uint8_t from, uint8_t to, uint16_t durationMs)
 {
   const int steps = 24;
   int delta = (int)to - (int)from;
@@ -1182,8 +1173,8 @@ void setup()
   I2C2.begin(SDA2, SCL2);
   oled1.begin(OLED_ADDR, true);
   oled2.begin(OLED_ADDR, true);
-  oled1.setRotation(1);
-  oled2.setRotation(1);
+  oled1.setRotation(3);
+  oled2.setRotation(3);
 
   oled1.clearDisplay();
   oled1.display();
@@ -1201,7 +1192,7 @@ ledcWrite(TFT_BL_PWM_CH, 0);   // start z wygaszonym podświetleniem
     while (true)
       delay(1000);
   }
-  tft.setRotation(1);
+  tft.setRotation(3);
   tft.setBrightness(255);
   tft.fillScreen(C_BLACK);
 
@@ -1309,46 +1300,5 @@ void loop()
 
   clockTick();
  
-if (g_clockHideScheduled)
-{
-  if ((int32_t)(millis() - g_clockHideAtMs) >= 0)
-  {
-    g_clockHideScheduled = false;
 
-    if (g_returnToIdleAfterClockHide)
-    {
-      g_returnToIdleAfterClockHide = false;
-      g_clockLastText = "";
-      g_currentBgPath = "/test.bin";
-
-      fadeBacklight(255, 0, 120);
-
-      clearClockArea();
-
-      if (SD.cardType() != CARD_NONE && SD.exists(g_currentBgPath))
-      {
-        bool ok = drawRgb565File(g_currentBgPath, 480, 320);
-        Serial.printf("[BG] after clock hide -> %s: %s\n",
-                      g_currentBgPath,
-                      ok ? "OK" : "FAIL");
-
-        if (ok)
-          rebuildClockSlotCaches();
-        else
-          tft.fillScreen(C_BLACK);
-      }
-      else
-      {
-        Serial.println("[BG] after clock hide -> /test.bin missing on SD");
-        tft.fillScreen(C_BLACK);
-      }
-
-      fadeBacklight(0, 255, 140);
-    }
-    else
-    {
-      clearClockArea();
-    }
-  }
-}
 }
