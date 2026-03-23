@@ -2598,7 +2598,7 @@ if (millis() - g_round.tStart >= g_round.tLimitMs)
     if (goal >= 0)
     {
       blowerSet(false);
-      sendGameEvent(3, g_roundsWonA, g_roundsWonB);
+      
        goLightsApplied = false; // reset na przyszłość
       g_state = GState::WAIT_PUCK_CLEAR;
     }

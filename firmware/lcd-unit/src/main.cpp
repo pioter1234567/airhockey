@@ -257,6 +257,12 @@ static bool canInit()
   return true;
 }
 
+
+
+
+
+
+
 bool drawRgb565File(const char* path, int w, int h)
 {
   File f = SD.open(path, FILE_READ);
@@ -777,29 +783,115 @@ static void scheduleOledClear(uint16_t delayMs)
   g_oledClearAtMs = millis() + delayMs;
 }
 
+static bool g_oledShowScheduled = false;
+static uint32_t g_oledShowAtMs = 0;
+static bool g_oledBlinkActive = false;
+static uint32_t g_oledBlinkAtMs = 0;
+static uint8_t g_oledBlinkStep = 0;
+
+static void startGameOverBlink()
+{
+  g_oledBlinkActive = true;
+  g_oledBlinkStep = 0;
+  g_oledBlinkAtMs = millis();
+}
+
+static void scheduleOledShow(uint16_t delayMs)
+{
+  g_oledShowScheduled = true;
+  g_oledShowAtMs = millis() + delayMs;
+}
+
 static void cancelOledClearSchedule()
 {
   g_oledClearScheduled = false;
   g_oledClearAtMs = 0;
 }
 
+
+
 static void oledTick()
 {
-  if (!g_oledClearScheduled)
-    return;
+  uint32_t now = millis();
 
-  if ((int32_t)(millis() - g_oledClearAtMs) < 0)
-    return;
+  // ===================== SHOW =====================
+  if (g_oledShowScheduled)
+  {
+    if ((int32_t)(now - g_oledShowAtMs) >= 0)
+    {
+      g_oledShowScheduled = false;
+      g_oledShowAtMs = 0;
 
-  g_oledClearScheduled = false;
-  g_oledClearAtMs = 0;
+      updateScoreDisplay();
+    }
+  }
 
-  clearScoreDisplays();
+  // ===================== BLINK SEQUENCE =====================
+  if (g_oledBlinkActive)
+  {
+    if ((int32_t)(now - g_oledBlinkAtMs) >= 0)
+    {
+      switch (g_oledBlinkStep)
+      {
+        case 0: // pokaż 400 ms
+          updateScoreDisplay();
+          g_oledBlinkAtMs = now + 300;
+          g_oledBlinkStep = 1;
+          break;
 
-  // po zakończeniu gry przygotuj stan pod następną grę,
-  // żeby nie mignął stary wynik przed 0:0
-  g_scoreA = 0;
-  g_scoreB = 0;
+        case 1: // zgaś 100 ms
+          clearScoreDisplays();
+          g_oledBlinkAtMs = now + 200;
+          g_oledBlinkStep = 2;
+          break;
+
+        case 2: // pokaż 400 ms
+          updateScoreDisplay();
+          g_oledBlinkAtMs = now + 300;
+          g_oledBlinkStep = 3;
+          break;
+
+        case 3: // zgaś 100 ms
+          clearScoreDisplays();
+          g_oledBlinkAtMs = now + 200;
+          g_oledBlinkStep = 4;
+          break;
+
+        case 4: // pokaż 1500 ms
+          updateScoreDisplay();
+          g_oledBlinkAtMs = now + 2200;
+          g_oledBlinkStep = 5;
+          break;
+
+        case 5: // zgaś całkiem i koniec
+          clearScoreDisplays();
+          g_oledBlinkActive = false;
+          g_oledBlinkAtMs = 0;
+          g_oledBlinkStep = 0;
+
+          // reset pod następną grę
+          g_scoreA = 0;
+          g_scoreB = 0;
+          break;
+      }
+    }
+  }
+
+  // ===================== CLEAR =====================
+  if (g_oledClearScheduled)
+  {
+    if ((int32_t)(now - g_oledClearAtMs) >= 0)
+    {
+      g_oledClearScheduled = false;
+      g_oledClearAtMs = 0;
+
+      clearScoreDisplays();
+
+      // reset pod następną grę
+      g_scoreA = 0;
+      g_scoreB = 0;
+    }
+  }
 }
 
 static void onScoreChanged()
@@ -886,27 +978,30 @@ case 3: // GameOver
   stopClock();
   g_clockLastText = "";
 
-  // a,b = finalny wynik meczu/rund
+  cancelOledClearSchedule();
+  g_oledShowScheduled = false;
+  g_oledShowAtMs = 0;
+  g_oledBlinkActive = false;
+  g_oledBlinkAtMs = 0;
+  g_oledBlinkStep = 0;
+
+  // najpierw wyczyść OLEDy
+  clearScoreDisplays();
+
+  // zapamiętaj wynik końcowy
   g_scoreA = a;
   g_scoreB = b;
   g_gameStarted = true;
-  updateScoreDisplay();
 
-  cancelOledClearSchedule();
-
-  // najpierw OLED pokazuje wynik, dopiero potem fadeout
   fadeBacklight(255, 0, 120);
-
   animsStartResult(a, b);
-
   fadeBacklight(0, 255, 140);
 
-  // po zakończeniu fadein odczekaj jeszcze czas ms i wyczyść OLED-y
-  scheduleOledClear(2200);
+  // zamiast zwykłego czekania -> mignięcia
+  startGameOverBlink();
 
   break;
 }
-
   case 4:                                 // CountdownTick
     Serial.printf("[COUNTDOWN] %u\n", a); // a = 3,2,1
     break;
@@ -1346,39 +1441,43 @@ ledcWrite(TFT_BL_PWM_CH, 255); // pełna jasność
 
 void loop()
 {
-static uint32_t last = 0;
-static uint32_t count = 0;
-  count++;
-if (millis() - last >= 1000)
-{
-  Serial.printf("Loop/s: %u\n", count);
-  count = 0;
-  last = millis();
-}
-
   handleSerialInjection();
-  
-  twai_message_t msg;
 
+
+
+
+
+  twai_message_t msg;
   while (twai_receive(&msg, 0) == ESP_OK)
   {
     Serial.printf("[CAN] RX id=0x%03X dlc=%d data:",
                   msg.identifier,
                   msg.data_length_code);
-
     for (int i = 0; i < msg.data_length_code; i++)
-    {
       Serial.printf(" %02X", msg.data[i]);
-    }
-
     Serial.println();
-
     handleCanFrame(msg);
   }
+/*
+  static uint32_t lastCanDiag = 0;
+  if (millis() - lastCanDiag > 1000)
+  {
+    lastCanDiag = millis();
+
+    twai_status_info_t st;
+    if (twai_get_status_info(&st) == ESP_OK)
+    {
+      Serial.printf("[CAN STATUS] state=%d tx_err=%u rx_err=%u tx_failed=%u rx_missed=%u bus_err=%u\n",
+                    st.state,
+                    st.tx_error_counter,
+                    st.rx_error_counter,
+                    st.tx_failed_count,
+                    st.rx_missed_count,
+                    st.bus_error_count);
+    }
+  }*/
 
   clockTick();
   animsTick();
   oledTick();
- 
-
 }
