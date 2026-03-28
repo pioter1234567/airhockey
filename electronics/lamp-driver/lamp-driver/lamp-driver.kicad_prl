@@ -4,16 +4,9 @@
     "active_layer_preset": "",
     "auto_track_width": true,
     "hidden_netclasses": [],
-    "hidden_nets": [
-      "GND",
-      "+5V",
-      "Net-(DF_SFX1-VCC)",
-      "Net-(DF_MUSIC1-VCC)",
-      "+3V3",
-      "Net-(12VDC1-12)"
-    ],
-    "high_contrast_mode": 1,
-    "net_color_mode": 0,
+    "hidden_nets": [],
+    "high_contrast_mode": 0,
+    "net_color_mode": 1,
     "opacity": {
       "images": 0.6,
       "pads": 1.0,
@@ -27,7 +20,7 @@
       "footprints": true,
       "graphics": true,
       "keepouts": true,
-      "lockedItems": true,
+      "lockedItems": false,
       "otherItems": true,
       "pads": true,
       "text": true,
@@ -66,7 +59,7 @@
     "ssh_key": ""
   },
   "meta": {
-    "filename": "rayman_main.kicad_prl",
+    "filename": "lamp-driver.kicad_prl",
     "version": 5
   },
   "net_inspector_panel": {
@@ -97,12 +90,12 @@
     "col_widths": [
       162,
       147,
-      102,
-      99,
-      106,
-      95,
-      99,
-      85,
+      91,
+      67,
+      91,
+      91,
+      91,
+      71,
       91,
       91
     ],

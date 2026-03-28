@@ -7,12 +7,20 @@
 #include <SPI.h>
 #include <SD.h>
 
+
+
+
 // ---------- LAMP / GOAL FX (split halves, no blinking) ----------
 // static uint32_t g_goalFxUntilMs = 0;
 // static uint8_t  g_goalFxSide = 0;   // 0=A, 1=B
 
 // 0=OFF, 1=STEADY ON, 2=GOAL FX
 // static uint8_t  g_lampMode = 255;
+
+static bool g_strobeActive = false;
+static uint32_t g_strobeIntervalMs = 0;
+static uint32_t g_strobeLastToggleMs = 0;
+static bool g_strobeLampOn = false;
 
 static inline void lampOff()
 {
@@ -25,6 +33,8 @@ static inline void lampOnSteady()
   matrixFill(255, 255, 255); // jak za mocno: daj np. 120
   matrixShow();
 }
+
+
 
 /* static inline void goalFxStart(uint8_t side, uint32_t nowMs) {
   g_goalFxSide = (side ? 1 : 0);
@@ -62,6 +72,13 @@ static volatile int8_t g_forcedGoal = -1;
 static uint32_t g_gameOverT0 = 0;
 static const uint32_t GAMEOVER_BLOWER_TIMEOUT_MS = 180000; // 3 min
 
+
+// uv ambiente
+static bool g_postGameActive = false;
+static uint32_t g_postGameStartMs = 0;
+static const uint32_t POST_GAME_DURATION_MS = 600000; // 10 min
+
+
 // ==================== PUCKLOCK (TB6612/TB505A1) ====================
 
 #define PIN_PWMA 39
@@ -70,6 +87,22 @@ static const uint32_t GAMEOVER_BLOWER_TIMEOUT_MS = 180000; // 3 min
 #define PIN_AIN2 8
 #define PIN_BIN1 9
 #define PIN_BIN2 10
+
+
+// UV (LDD-500H DIM on GPIO14)
+#define PIN_UV_DIM 14
+#define UV_PWM_CH   0
+#define UV_PWM_HZ   1000
+#define UV_PWM_RES  12
+
+static bool g_uvCur = false;
+
+static inline uint32_t pwmDuty12(float duty)
+{
+  if (duty < 0.0f) duty = 0.0f;
+  if (duty > 1.0f) duty = 1.0f;
+  return (uint32_t)(duty * ((1u << UV_PWM_RES) - 1) + 0.5f);
+}
 
 // BUSY DF
 #define DF_BUSY_PIN 38
@@ -654,7 +687,36 @@ static inline void lightsSetMode(uint8_t mode)
   Serial.printf("[LIGHTS] mode=%u\n", mode);
   // TODO: tu wyślij faktyczne komendy do sterownika świateł
 }
-static inline void uvSet(bool on) { Serial.printf("[UV] %s\n", on ? "ON" : "OFF"); }
+static inline void uvSet(bool on)
+{
+  static uint32_t lastToggle = 0;
+  static bool high = false;
+
+  if (!on)
+  {
+    ledcWrite(UV_PWM_CH, 0);
+    return;
+  }
+
+  uint32_t now = millis();
+
+  if (now - lastToggle >= 500)
+  {
+    lastToggle = now;
+    high = !high;
+  }
+
+  float duty = high ? 0.40f : 0.40f;
+
+  ledcWrite(UV_PWM_CH, pwmDuty12(duty));
+}
+
+static void uvSetLevel(float duty) // 0.0 - 1.0
+{
+  ledcWrite(UV_PWM_CH, pwmDuty12(duty));
+}
+
+
 static inline void goalsIllumSet(bool on) { Serial.printf("[GOALS ILLUM] %s\n", on ? "ON" : "OFF"); }
 
 // ========================= Games catalog (names) =========================
@@ -1194,9 +1256,24 @@ static void blowerSet(bool on)
 // ========================= Round lifecycle =========================
 static void lightsApplyFromFlags()
 {
+  const bool gameActive =
+      (g_state == GState::PREPARE) ||
+      (g_state == GState::COUNTDOWN) ||
+      (g_state == GState::ROUND_NORMAL) ||
+      (g_state == GState::ROUND_MUSIC);
+
+  if (!gameActive)
+  {
+    lightsSetMode(0);
+    uvSetLevel(0.0f);
+    goalsIllumSet(false);
+    return;
+  }
+
   const bool strobes = flagOn(g_set.flags, F_STROBES);
   const bool anim = flagOn(g_set.flags, F_ANIM);
   uint8_t mode = (strobes ? 2 : (anim ? 1 : 0));
+
   lightsSetMode(mode);
   uvSet(flagOn(g_set.flags, F_UV));
   goalsIllumSet(flagOn(g_set.flags, F_GOALILLUM));
@@ -1311,27 +1388,26 @@ static void startMusicRound()
   animsSetMode(ANIM_ROUND);
 }
 
+
+
+
 static void endRound(bool finalGameOver = false)
 {
   binStop();
 
   uint8_t winner = 2;
-  if (g_round.scoreA > g_round.scoreB)
-  {
+  if (g_round.scoreA > g_round.scoreB) {
     winner = 0;
     g_roundsWonA++;
-  }
-  else if (g_round.scoreB > g_round.scoreA)
-  {
+  } else if (g_round.scoreB > g_round.scoreA) {
     winner = 1;
     g_roundsWonB++;
   }
 
-  sendGameEvent(2, g_round.scoreA, g_round.scoreB); // RoundEnd
+  sendGameEvent(2, g_round.scoreA, g_round.scoreB);
 
-  if (finalGameOver)
-  {
-    sendGameEvent(3, g_round.scoreA, g_round.scoreB); // GameOver od razu po ostatniej rundzie
+  if (finalGameOver) {
+    sendGameEvent(3, g_round.scoreA, g_round.scoreB);
   }
 
   Serial.printf("[ROUND] end. score %u:%u | roundsWon A=%u B=%u\n",
@@ -1657,6 +1733,7 @@ static void serialHelp()
   Serial.println("mp3 stop");
   Serial.println("mp3 teensies <fileNo>                  (folder 01)");
   Serial.println("sfx <idx>");
+  Serial.println("strobe <hz>|a|b                        (strobe10, strobe b=strobeb.bin, strobe a=strobea.bin)");
   Serial.println("=======================\n");
 }
 
@@ -1719,6 +1796,65 @@ static void serialHandleLine(char *line)
     return;
   }
 
+    if (!strncasecmp(tok[0], "strobe", 6))
+{
+  // obsługa:
+  // strobe10
+  // strobe 10
+  // strobe a
+  // strobe b
+  // strobe 0
+
+  if (n >= 2 && (!strcasecmp(tok[1], "a") || !strcasecmp(tok[1], "b")))
+{
+  g_strobeActive = false;
+  g_strobeLampOn = false;
+
+  animsSetMode(ANIM_ROUND);   // <-- to jest klucz
+
+  if (!strcasecmp(tok[1], "a"))
+  {
+    binStart("/anims/strobea.bin");
+    Serial.println("[STROBE] BIN A");
+  }
+  else
+  {
+    binStart("/anims/strobeb.bin");
+    Serial.println("[STROBE] BIN B");
+  }
+  return;
+}
+  int hz = 0;
+
+  if (strlen(tok[0]) > 6)
+    hz = atoi(tok[0] + 6);
+  else if (n >= 2)
+    hz = atoi(tok[1]);
+if (hz <= 0)
+{
+  g_strobeActive = false;
+  g_strobeLampOn = false;
+  binStop();
+  animsSetMode(ANIM_OFF);
+  matrixFill(0, 0, 0);
+  matrixShow();
+  Serial.println("[STROBE] OFF");
+  return;
+}
+
+  binStop(); // wyłącz BIN-y, jeśli leciały
+  g_strobeIntervalMs = 1000UL / (uint32_t)(hz * 2);
+  if (g_strobeIntervalMs == 0)
+    g_strobeIntervalMs = 1;
+
+  g_strobeLastToggleMs = millis();
+  g_strobeLampOn = false;
+  g_strobeActive = true;
+
+  Serial.printf("[STROBE] ON %d Hz (toggle %lu ms)\n",
+                hz, (unsigned long)g_strobeIntervalMs);
+  return;
+}
 
 
 
@@ -2065,27 +2201,34 @@ if (!active) {
 // ANIMACJE led lampa gora z pliku
 static File binFile;
 static bool binPlaying = false;
-static uint32_t binLastFrame = 0;
+static uint32_t g_musicStartMs = 0;
 
-#define BIN_PIXELS 1024                 // 64 x 16
-#define BIN_FRAME_SIZE (BIN_PIXELS * 3) // 3072 B (pełne RGB)
+#define BIN_PIXELS 1024
+#define BIN_FRAME_SIZE (BIN_PIXELS * 3)
 #define BIN_FPS 20
 #define BIN_FRAME_MS (1000 / BIN_FPS)
-static const char *binPath = nullptr; // aktualnie grany plik
+
+static const char *binPath = nullptr;
+
+static uint32_t binFrameCount = 0;        // ile pełnych klatek w pliku
+static uint32_t binLastRenderedFrame = UINT32_MAX; // żeby nie renderować 2x tej samej
+
 
 void binStop()
 {
   if (binFile)
     binFile.close();
+
   binPlaying = false;
+  binFrameCount = 0;
+  binLastRenderedFrame = UINT32_MAX;
 }
 
 void binStart(const char *path)
 {
   binStop();
 
-  binPath = path; // <- zapamiętaj do recovery
-
+  binPath = path;
   binFile = SD.open(binPath, FILE_READ);
   if (!binFile)
   {
@@ -2093,10 +2236,30 @@ void binStart(const char *path)
     return;
   }
 
-  Serial.println("[BIN] start");
+  uint32_t size = (uint32_t)binFile.size();
+  binFrameCount = size / BIN_FRAME_SIZE;
+
+  if (binFrameCount == 0)
+  {
+    Serial.printf("[BIN] empty/too small: %s size=%lu\n", binPath, (unsigned long)size);
+    binFile.close();
+    return;
+  }
+
+  uint32_t now = millis();
+
+  Serial.printf("[BIN] start frames=%lu size=%lu\n",
+                (unsigned long)binFrameCount,
+                (unsigned long)size);
+
   binPlaying = true;
-  binLastFrame = millis(); // lepiej niż 0
+  binLastRenderedFrame = UINT32_MAX;
+  g_musicStartMs = now;
 }
+
+
+
+
 static void adcThreshSaveToNVS()
 {
   prefs.begin("ah", false);
@@ -2127,6 +2290,234 @@ static void adcThreshLoadFromNVS()
                 adcThreshBmin, adcThreshBmax);
 }
 
+static void showPurpleWithCorners(uint8_t bgLevel)
+{
+  const uint8_t cornerR = 150;
+  const uint8_t cornerG = 0;
+  const uint8_t cornerB = 255;
+
+  // tło całej matrycy
+  matrixFill(bgLevel, 0, bgLevel);
+
+  // rogi zawsze na stałe 100%
+  matrixSetIndex(0,    cornerR, cornerG, cornerB);
+  matrixSetIndex(31,   cornerR, cornerG, cornerB);
+  matrixSetIndex(1,    cornerR, cornerG, cornerB);
+  matrixSetIndex(30,   cornerR, cornerG, cornerB);
+
+  matrixSetIndex(14,   cornerR, cornerG, cornerB);
+  matrixSetIndex(17,   cornerR, cornerG, cornerB);
+  matrixSetIndex(15,   cornerR, cornerG, cornerB);
+  matrixSetIndex(16,   cornerR, cornerG, cornerB);
+
+  matrixSetIndex(992,  cornerR, cornerG, cornerB);
+  matrixSetIndex(1023, cornerR, cornerG, cornerB);
+  matrixSetIndex(993,  cornerR, cornerG, cornerB);
+  matrixSetIndex(1022, cornerR, cornerG, cornerB);
+
+  matrixSetIndex(1006, cornerR, cornerG, cornerB);
+  matrixSetIndex(1009, cornerR, cornerG, cornerB);
+  matrixSetIndex(1007, cornerR, cornerG, cornerB);
+  matrixSetIndex(1008, cornerR, cornerG, cornerB);
+
+  matrixShow();
+}
+
+static void applyPostGameLights()
+{
+  bool uvEnabled = flagOn(g_set.flags, F_UV);
+
+  if (uvEnabled)
+  {
+    uvSetLevel(0.01f);   // 1% UV przez 10 min
+    matrixFill(0, 0, 0);
+    matrixShow();
+  }
+  else
+  {
+    uvSetLevel(0.0f);    // UV całkiem OFF
+    showPurpleWithCorners(0);  // tylko 4 rogi przez 10 min
+  }
+}
+
+static void enterGameOver()
+{
+  lightsSetMode(0);
+  puckLockCmd(true, 0x03);
+
+  animsSetBreathing(false);
+  animsSetMode(ANIM_OFF);
+
+applyPostGameLights();
+
+  g_state = GState::GAME_OVER;
+  g_gameOverT0 = millis();
+  g_gameOverGuardUntilMs = millis() + 500;
+
+  musicPlayFolderFile(6, 11);
+}
+
+
+static void debugScanPixels()
+{
+  static uint16_t idx = 0;
+  static uint32_t last = 0;
+
+  if (millis() - last < 250)
+    return;
+
+  last = millis();
+
+  matrixFill(0, 0, 0);
+
+  // jeden pixel na fioletowo
+  matrixSetIndex(idx, 150, 0, 255);
+
+  matrixShow();
+
+  Serial.printf("[PIXEL] idx=%u\n", idx);
+
+  idx++;
+  if (idx >= 1024)
+    idx = 0;
+}
+
+
+static void showFullPurple(uint8_t level)
+{
+  matrixFill(level, 0, level);
+  matrixShow();
+}
+
+static void applyIdleAmbientLights()
+{
+  if (flagOn(g_set.flags, F_UV))
+  {
+    uvSetLevel(0.01f);   // 1% UV
+    matrixFill(0, 0, 0);
+    matrixShow();
+  }
+  else
+  {
+    uvSetLevel(0.0f);
+    showPurpleWithCorners(0);
+  }
+}
+
+
+
+
+static void runBootLightSequence()
+{
+  const bool uvEnabled = flagOn(g_set.flags, F_UV);
+
+  const uint16_t steps = 80;
+  const uint16_t stepDelayMs = 12;
+
+  // start od ciemności
+  matrixFill(0, 0, 0);
+  matrixShow();
+  uvSetLevel(0.0f);
+
+  // =========================
+  // FADE IN
+  // =========================
+  for (uint16_t i = 0; i <= steps; i++)
+  {
+    float t = (float)i / (float)steps;
+    float k = t * t * (3.0f - 2.0f * t);   // smoothstep
+
+    uint8_t level = (uint8_t)(k * 255.0f + 0.5f);
+
+    matrixFill(level, 0, level);
+    matrixShow();
+
+    if (uvEnabled)
+      uvSetLevel(0.40f * k);   // UV do 40%
+    else
+      uvSetLevel(0.0f);
+
+    delay(stepDelayMs);
+  }
+
+  delay(250);
+
+  // =========================
+  // FADE OUT
+  // =========================
+  if (uvEnabled)
+  {
+    // matryca do 0, UV do 1%
+    for (int i = steps; i >= 0; i--)
+    {
+      float t = (float)i / (float)steps;
+      float k = t * t * (3.0f - 2.0f * t);
+
+      uint8_t level = (uint8_t)(k * 255.0f + 0.5f);
+
+      matrixFill(level, 0, level);
+      matrixShow();
+
+      // 40% -> 1%
+      float uv = 0.01f + (0.40f - 0.01f) * k;
+      uvSetLevel(uv);
+
+      delay(stepDelayMs);
+    }
+
+    matrixFill(0, 0, 0);
+    matrixShow();
+    uvSetLevel(0.01f);
+  }
+  else
+  {
+// środek wygasa, rogi zostają
+for (int i = steps; i >= 0; i--)
+{
+  float t = (float)i / (float)steps;
+  float k = t * t * (3.0f - 2.0f * t);
+
+  uint8_t level = (uint8_t)(k * 255.0f + 0.5f);
+
+  showPurpleWithCorners(level);
+  uvSetLevel(0.0f);
+  delay(stepDelayMs);
+}
+
+uvSetLevel(0.0f);
+showPurpleWithCorners(0);
+  }
+
+  // 10 minut ambientu po starcie
+  g_postGameActive = true;
+  g_postGameStartMs = millis();
+}
+
+static void strobeTick()
+{
+  if (!g_strobeActive)
+    return;
+
+  uint32_t now = millis();
+
+  // zmiana stanu co interval
+  if (now - g_strobeLastToggleMs >= g_strobeIntervalMs)
+  {
+    g_strobeLastToggleMs = now;
+    g_strobeLampOn = !g_strobeLampOn;
+  }
+
+  // 👉 TO JEST KLUCZ:
+  // rysuj ZA KAŻDYM razem, nie tylko przy zmianie
+
+  if (g_strobeLampOn)
+    matrixFill(255, 255, 255);
+  else
+    matrixFill(0, 0, 0);
+
+  matrixShow();
+}
+
 // ========================= Arduino setup/loop =========================
 void setup()
 {
@@ -2135,6 +2526,11 @@ void setup()
   sd_init();
   sd_list_root();
   sd_check_all_anims();
+
+  ledcSetup(UV_PWM_CH, UV_PWM_HZ, UV_PWM_RES);
+ledcAttachPin(PIN_UV_DIM, UV_PWM_CH);
+ledcWrite(UV_PWM_CH, 0);   // startowo zgaszone
+g_uvCur = false;
 
   File f = SD.open(TOAD_PATH, FILE_READ);
   if (!f)
@@ -2150,68 +2546,52 @@ void setup()
   WiFi.mode(WIFI_OFF);
   btStop();
 #endif
-  matrixInit(200); // jasnosc startowa
+matrixInit(200); // jasnosc startowa
 
-  // ===== TEST LAMPY NA STARCIe: R, G, B, W =====
-  matrixFill(255, 0, 0);
-  matrixShow();
-  delay(500); // RED
-  matrixFill(0, 255, 0);
-  matrixShow();
-  delay(500); // GREEN
-  matrixFill(0, 0, 255);
-  matrixShow();
-  delay(500); // BLUE
-  matrixFill(255, 255, 255);
-  matrixShow();
-  delay(500); // WHITE
-  matrixClear();
-  matrixShow(); // OFF
+animsInit();
+animsSetMode(ANIM_OFF);
 
-  matrixSetPixel(0, 0, 255, 0, 0); // RED (logiczny)
-  matrixShow();
-  delay(2200);
+analogReadResolution(12);
+analogSetPinAttenuation(PIN_GOAL_ADC, ADC_11db);
 
-  animsInit();
-  animsSetMode(ANIM_OFF);
+// Jeden seed, porządny (HW RNG + drobna entropia)
+randomSeed((uint32_t)esp_random() ^ (uint32_t)micros() ^ (uint32_t)analogRead(PIN_GOAL_ADC));
 
-  analogReadResolution(12);
-  analogSetPinAttenuation(PIN_GOAL_ADC, ADC_11db);
+puckInit();
 
-  // Jeden seed, porządny (HW RNG + drobna entropia)
-  randomSeed((uint32_t)esp_random() ^ (uint32_t)micros() ^ (uint32_t)analogRead(PIN_GOAL_ADC));
+pinMode(DF_BUSY_PIN, INPUT);
 
-  puckInit();
+pinMode(PIN_BLOWER, OUTPUT);
+digitalWrite(PIN_BLOWER, !BLOWER_ACTIVE); // wymuś OFF zanim reszta ruszy
 
-  pinMode(DF_BUSY_PIN, INPUT);
+// MP3 UARTs
+MusicSerial.begin(9600, SERIAL_8N1, MP3_MUSIC_RX, MP3_MUSIC_TX);
+SfxSerial.begin(9600, SERIAL_8N1, MP3_SFX_RX, MP3_SFX_TX);
+mp3SetVol(MusicSerial, 50);
+mp3SetVol(SfxSerial, 30);
 
-  pinMode(PIN_BLOWER, OUTPUT);
-  digitalWrite(PIN_BLOWER, !BLOWER_ACTIVE); // wymuś OFF zanim reszta ruszy
+// CAN
+if (twai_driver_install(&gconf, &tconf, &fconf) != ESP_OK)
+{
+  Serial.println("[CAN] driver_install ERR");
+  while (true)
+    delay(1000);
+}
+if (twai_start() != ESP_OK)
+{
+  Serial.println("[CAN] start ERR");
+  while (true)
+    delay(1000);
+}
+twai_reconfigure_alerts(TWAI_ALERT_BUS_OFF | TWAI_ALERT_BUS_RECOVERED, nullptr);
 
-  // MP3 UARTs
-  MusicSerial.begin(9600, SERIAL_8N1, MP3_MUSIC_RX, MP3_MUSIC_TX);
-  SfxSerial.begin(9600, SERIAL_8N1, MP3_SFX_RX, MP3_SFX_TX);
-  mp3SetVol(MusicSerial, 50);
-  mp3SetVol(SfxSerial, 30);
+// NAJPIERW wczytaj zapisane ustawienia
+settingsLoadFromNVS();
+adcThreshLoadFromNVS();
+printSettings(g_set);
 
-  // CAN
-  if (twai_driver_install(&gconf, &tconf, &fconf) != ESP_OK)
-  {
-    Serial.println("[CAN] driver_install ERR");
-    while (true)
-      delay(1000);
-  }
-  if (twai_start() != ESP_OK)
-  {
-    Serial.println("[CAN] start ERR");
-    while (true)
-      delay(1000);
-  }
-  twai_reconfigure_alerts(TWAI_ALERT_BUS_OFF | TWAI_ALERT_BUS_RECOVERED, nullptr);
-
-  settingsLoadFromNVS();
-  adcThreshLoadFromNVS();
-  printSettings(g_set);
+// DOPIERO TERAZ odpal sekwencję startową, bo używa F_UV
+runBootLightSequence();
 
   Serial.printf("\n== CAN RX @250kbps  TX=%d RX=%d ==\n", (int)CAN_TX_PIN, (int)CAN_RX_PIN);
   Serial.println("[READY] Waiting for START (0x301: 01 gtype gindex)");
@@ -2221,19 +2601,52 @@ void setup()
 static void gameStartFull(uint8_t index);
 static void gameStartMusicOnlyRandom();
 
+static inline bool uvShouldBeOn()
+{
+  // UV tylko podczas aktywnej gry i tylko jeśli flaga UV jest ON w ustawieniach
+  if (!flagOn(g_set.flags, F_UV)) return false;
+
+  switch (g_state)
+  {
+    case GState::ROUND_NORMAL:
+    case GState::ROUND_MUSIC:
+    case GState::PREPARE:
+    case GState::COUNTDOWN:
+      return true;
+
+    default:
+      return false;
+  }
+}
+
 void loop()
 {
+  if (g_postGameActive)
+  {
+    uint32_t now = millis();
+
+    if (now - g_postGameStartMs >= POST_GAME_DURATION_MS)
+    {
+      uvSetLevel(0.0f);
+      matrixFill(0, 0, 0);
+      matrixShow();
+
+      g_postGameActive = false;
+      Serial.println("[POST GAME] timeout -> all OFF");
+    }
+  }
 
   serialPoll();
   adcWatchPoll();
   musicAutoAdvanceTick();
-  binUpdate();
+
+
+
   goalCalMainTick();
 
-  // --- CAN RX ---
   twai_message_t msg;
   if (twai_receive(&msg, pdMS_TO_TICKS(10)) == ESP_OK)
-{
+  {
   bool handled = false;
 
   puckOnCan(msg);
@@ -2523,6 +2936,7 @@ void loop()
       {
         lightsSetMode(0);
         g_state = GState::GAME_OVER;
+        
         g_gameOverT0 = millis();
         g_gameOverGuardUntilMs = millis() + 500;
         musicPlayFolderFile(6, 11);
@@ -2558,52 +2972,37 @@ if (millis() - g_round.tStart >= g_round.tLimitMs)
 {
   endRound();
   sendGameEvent(3, g_roundsWonA, g_roundsWonB);
-
-  lightsSetMode(0);
-  puckLockCmd(true, 0x03);
-  g_state = GState::GAME_OVER;
-  g_gameOverT0 = millis();
-  g_gameOverGuardUntilMs = millis() + 500;
-  musicPlayFolderFile(6, 11);
+  enterGameOver();
 }
   }
   break;
 
   case GState::GAME_OVER:
+{
+  if ((int32_t)(millis() - g_gameOverGuardUntilMs) < 0)
+    break;
+
+  if (blowerOn && (millis() - g_gameOverT0) >= GAMEOVER_BLOWER_TIMEOUT_MS)
   {
-    if ((int32_t)(millis() - g_gameOverGuardUntilMs) < 0)
-      break; // guard po przejściu
-             // Fallback: jeśli nikt nie wrzuci krążka po GameOver → wyłącz dmuchawę po 3 min
-    if (blowerOn && (millis() - g_gameOverT0) >= GAMEOVER_BLOWER_TIMEOUT_MS)
-    {
-      blowerSet(false);
-      Serial.println("[BLOWER] GameOver timeout 3 min → OFF");
-      // spójnie z zachowaniem „po golu”:
-      
-      g_state = GState::WAIT_PUCK_CLEAR;
-    }
-    // Lights: full off → leave ambient 10%
-    static bool goLightsApplied = false;
-    if (!goLightsApplied)
-    {
-      lightsSetMode(0);
-      goLightsApplied = true;
-    }
-    int8_t goal = pollGoalForGameOver();
-
-
-    // (tu: ustaw ambient 10% w Twoim sterowniku)
-    // Blower: pozostaje ON aż krążek wpadnie do bramki
-
-    if (goal >= 0)
-    {
-      blowerSet(false);
-      
-       goLightsApplied = false; // reset na przyszłość
-      g_state = GState::WAIT_PUCK_CLEAR;
-    }
+    blowerSet(false);
+    Serial.println("[BLOWER] GameOver timeout 3 min -> OFF");
+    g_state = GState::WAIT_PUCK_CLEAR;
+    break;
   }
-  break;
+
+
+
+  int8_t goal = pollGoalForGameOver();
+
+  if (goal >= 0)
+  {
+    blowerSet(false);
+
+    applyPostGameLights();
+    g_state = GState::WAIT_PUCK_CLEAR;
+  }
+}
+break;
 
   case GState::WAIT_PUCK_CLEAR:
   {
@@ -2631,35 +3030,74 @@ if (millis() - g_round.tStart >= g_round.tLimitMs)
     }
   }
 
-  /*  ========================= LAMP STATE (stable) =========================
-  uint32_t nowMs = millis();
-  bool gameRunning =
-      (g_state != GState::IDLE) &&
-      (g_state != GState::GAME_OVER) &&
-      (g_state != GState::WAIT_PUCK_CLEAR);
+uint32_t now = millis();
 
-  if (!gameRunning){
-    if (g_lampMode != 0){ lampOff(); g_lampMode = 0; }
-    // also cancel any pending goal fx
-    g_goalFxUntilMs = 0;
-  } else {
-    if (goalFxActive(nowMs)){
-      g_lampMode = 2;
-      goalFxTick(nowMs);
-    } else {
-      if (g_lampMode != 1){ lampOnSteady(); g_lampMode = 1; }
-    }
-  }
-    */
-
-  if (binPlaying)
+if (g_strobeActive)
+{
+  if (now - g_strobeLastToggleMs >= g_strobeIntervalMs)
   {
-    binUpdate(); // BIN ma ostatnie słowo na matrycy
+    g_strobeLastToggleMs = now;
+    g_strobeLampOn = !g_strobeLampOn;
+  }
+
+  if (g_strobeLampOn)
+    matrixFill(255, 255, 255);
+  else
+    matrixFill(0, 0, 0);
+
+  matrixShow();
+}
+else if (binPlaying)
+{
+  binUpdate(); // BIN ma ostatnie słowo na matrycy
+
+  UvLevel uvLevel = animsGetUvLevel(
+      flagOn(g_set.flags, F_UV),
+      true,
+      (uint8_t)g_theme,
+      now - g_musicStartMs);
+
+  switch (uvLevel)
+  {
+    case UV_LEVEL_OFF:
+      ledcWrite(UV_PWM_CH, 0);
+      break;
+
+    case UV_LEVEL_BASE:
+      ledcWrite(UV_PWM_CH, pwmDuty12(0.40f));
+      break;
+
+    case UV_LEVEL_BOOST:
+      ledcWrite(UV_PWM_CH, pwmDuty12(0.80f));
+      break;
+  }
+}
+else
+{
+  if (g_state == GState::GAME_OVER)
+  {
+    applyPostGameLights();
+  }
+  else if (g_state == GState::IDLE || g_state == GState::WAIT_PUCK_CLEAR)
+  {
+    matrixFill(0, 0, 0);
+    matrixShow();
+    ledcWrite(UV_PWM_CH, 0);
   }
   else
   {
-    animsTick(millis()); // normalne animacje (oddychanie itd.)
+    animsTick(now);
+
+    if (flagOn(g_set.flags, F_UV))
+    {
+      ledcWrite(UV_PWM_CH, pwmDuty12(0.40f));
+    }
+    else
+    {
+      ledcWrite(UV_PWM_CH, 0);
+    }
   }
+}
 }
 
 static bool binReadExact(uint8_t *dst, size_t n)
@@ -2677,45 +3115,34 @@ static bool binReadExact(uint8_t *dst, size_t n)
 
 void binUpdate()
 {
-
   if (!binPlaying)
     return;
   if (animsGetMode() != ANIM_ROUND)
     return;
+  if (!binFile || !binPath || binFrameCount == 0)
+    return;
 
   uint32_t now = millis();
-  uint32_t elapsed = now - binLastFrame;
+  uint32_t elapsedMs = now - g_musicStartMs;
 
-  if (elapsed < BIN_FRAME_MS)
+  // numer klatki wynikający z czasu absolutnego od startu
+  uint32_t wantFrame = (elapsedMs * BIN_FPS) / 1000UL;
+
+  // zapętlenie po liczbie klatek w pliku
+  uint32_t frameIndex = wantFrame % binFrameCount;
+
+  // nie renderuj tej samej klatki 2x, jeśli loop wpadnie szybciej niż 50 ms
+  if (frameIndex == binLastRenderedFrame)
     return;
 
-  // nie nadrabiamy wielu klatek naraz (żeby nie przyspieszać po lagach)
-  if (elapsed > (BIN_FRAME_MS * 3))
-    binLastFrame = now;
-  else
-    binLastFrame += BIN_FRAME_MS;
+  uint32_t framePos = frameIndex * BIN_FRAME_SIZE;
 
-  if (!binFile)
-    return;
-  if (!binPath)
-    return;
-
-  // jeśli zostało mniej niż 1 klatka w pliku -> wróć na początek
-  uint32_t framePos = binFile.position();
-  if (binFile.available() < (int)BIN_FRAME_SIZE)
+  if (!binFile.seek(framePos))
   {
-    binFile.seek(0);
-    framePos = 0;
-  }
-
-  static uint8_t buf[BIN_FRAME_SIZE];
-
-  // --- czytaj ZAWSZE pełną klatkę (to ubija "część o 1 frame do tyłu") ---
-  if (!binReadExact(buf, BIN_FRAME_SIZE))
-  {
-
-    Serial.printf("[SD] short/err read pos=%lu file=%s -> recover\n",
-                  (unsigned long)framePos, binPath);
+    Serial.printf("[SD] seek FAIL frame=%lu pos=%lu file=%s -> recover\n",
+                  (unsigned long)frameIndex,
+                  (unsigned long)framePos,
+                  binPath);
 
     binFile.close();
 
@@ -2734,28 +3161,26 @@ void binUpdate()
       return;
     }
 
-    // wróć do pozycji klatki (albo 0 jeśli się nie uda)
     if (!binFile.seek(framePos))
     {
-      Serial.println("[SD] seek back FAIL -> seek(0)");
-      binFile.seek(0);
-      framePos = 0;
-    }
-
-    // druga próba: znów readExact
-    if (!binReadExact(buf, BIN_FRAME_SIZE))
-    {
-      Serial.println("[SD] readExact FAIL even after recover -> seek(0) and retry");
-      binFile.seek(0);
-      if (!binReadExact(buf, BIN_FRAME_SIZE))
-      {
-        Serial.println("[SD] readExact FAIL from 0 -> give up this tick");
-        return;
-      }
+      Serial.printf("[SD] seek FAIL again frame=%lu pos=%lu\n",
+                    (unsigned long)frameIndex,
+                    (unsigned long)framePos);
+      return;
     }
   }
 
-  // --- render ---
+  static uint8_t buf[BIN_FRAME_SIZE];
+
+  if (!binReadExact(buf, BIN_FRAME_SIZE))
+  {
+    Serial.printf("[SD] read FAIL frame=%lu pos=%lu file=%s\n",
+                  (unsigned long)frameIndex,
+                  (unsigned long)framePos,
+                  binPath);
+    return;
+  }
+
   for (uint16_t i = 0; i < BIN_PIXELS; i++)
   {
     uint8_t r = buf[i * 3 + 0];
@@ -2765,6 +3190,7 @@ void binUpdate()
   }
 
   matrixShow();
+  binLastRenderedFrame = frameIndex;
 }
 
 // ========================= Game start entry points =========================

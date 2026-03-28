@@ -13,6 +13,132 @@ static uint8_t  g_goalSide = 0;     // 0 = A, 1 = B
 static uint32_t g_eventMs  = 0;
 static uint16_t g_goalDur  = 500;   // ms
 
+
+
+// UV tablice
+
+struct TimeWindow
+{
+  uint32_t fromMs;
+  uint32_t toMs;
+};
+
+
+
+struct UvPattern
+{
+  const TimeWindow* offWindows;
+  size_t offCount;
+  const TimeWindow* boostWindows;
+  size_t boostCount;
+};
+
+static bool isInWindow(uint32_t t, const TimeWindow* w, size_t n)
+{
+  for (size_t i = 0; i < n; ++i)
+  {
+    if (t >= w[i].fromMs && t < w[i].toMs)
+      return true;
+  }
+  return false;
+}
+
+
+
+
+static const TimeWindow UV_ToadStory_OFF[] = {
+    {  5150,   5200 },
+    {  5800,   6100 },
+    { 14050,  14700 },
+    { 15400,  16000 },
+    { 16450,  17350 },
+    { 29250,  29350 },
+    { 29550,  29600 },
+    { 29950,  30000 },
+    { 30200,  30300 },
+    { 30500,  30550 },
+    { 30850,  30950 },
+    { 31100,  31300 },
+    { 49550,  49600 },
+    { 55350,  55450 },
+    { 64950,  65050 },
+    { 65250,  65350 },
+    { 65550,  65700 },
+    { 65900,  66000 },
+    { 66200,  66350 },
+    { 66550,  66650 },
+    { 66900,  67000 },
+    { 67200,  67350 },
+    { 81100,  81750 },
+};
+
+static const TimeWindow UV_ToadStory_BOOST[] = {
+    {  6700,   6800 },
+    {  7050,   7150 },
+    { 12350,  12550 },  
+    { 18700,  19200 },
+    { 28650,  28950 },
+    { 29050,  29250 },
+    { 29350,  29550 },
+    { 29600,  29950 },
+    { 30000,  30200 },
+    { 30300,  30500 },
+    { 30550,  30850 },
+    { 30950,  31100 },
+    { 33050,  33400 },
+    { 33650,  34050 },
+    { 35700,  36050 },
+    { 36300,  36700 },
+    { 38350,  38700 },
+    { 39000,  39400 },
+    { 39650,  40200 },
+    { 44700,  45100 },
+    { 47100,  47500 },
+    { 49600,  50100 },
+    { 52700,  53200 },
+    { 53350,  53900 },
+    { 57250,  57900 },
+    { 81900,  82400 },
+};
+
+
+static const UvPattern UV_PATTERNS[] = {
+    { nullptr, 0, nullptr, 0 }, // 0
+    {
+      UV_ToadStory_OFF,
+      sizeof(UV_ToadStory_OFF) / sizeof(TimeWindow),
+      UV_ToadStory_BOOST,
+      sizeof(UV_ToadStory_BOOST) / sizeof(TimeWindow)
+    }, // 1 = toad
+};
+
+
+
+
+
+
+
+UvLevel animsGetUvLevel(bool uvEnabled, bool animEnabled, uint8_t theme, uint32_t ms)
+{
+  if (!uvEnabled) return UV_LEVEL_OFF;
+
+  // animacje OFF -> stałe UV bazowe
+  if (!animEnabled) return UV_LEVEL_BASE;
+
+  if (theme >= (sizeof(UV_PATTERNS) / sizeof(UV_PATTERNS[0])))
+    return UV_LEVEL_BASE;
+
+  const UvPattern& p = UV_PATTERNS[theme];
+
+  if (p.offWindows && p.offCount && isInWindow(ms, p.offWindows, p.offCount))
+    return UV_LEVEL_OFF;
+
+  if (p.boostWindows && p.boostCount && isInWindow(ms, p.boostWindows, p.boostCount))
+    return UV_LEVEL_BOOST;
+
+  return UV_LEVEL_BASE;
+}
+
 void animsInit(){
   g_mode    = ANIM_OFF;
   g_eventMs = 0;
