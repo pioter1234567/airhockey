@@ -8,6 +8,12 @@ static CRGB g_roundColor = CRGB::Black;
 static bool g_breathing = false;
 static uint32_t g_goalUntilMs = 0;
 
+static bool     g_lampManualActive = false;
+static uint8_t  g_lampModeManual = LMODE_OFF;
+static uint8_t  g_lampValueManual = 0;
+static uint32_t g_lampUntilMs = 0;
+static uint32_t g_lampFxStartMs = 0;
+
 // GOAL state
 static uint8_t  g_goalSide = 0;     // 0 = A, 1 = B
 static uint32_t g_eventMs  = 0;
@@ -151,6 +157,136 @@ void animsSetMode(AnimMode m){
   }
 }
 
+
+
+
+static uint32_t lampDurationToMs(uint8_t d)
+{
+  switch (d)
+  {
+    case LDUR_15MIN: return 15UL * 60UL * 1000UL;
+    case LDUR_60MIN: return 60UL * 60UL * 1000UL;
+    case LDUR_3H:    return 3UL  * 60UL * 60UL * 1000UL;
+    case LDUR_6H:    return 6UL  * 60UL * 60UL * 1000UL;
+    default:         return 0;
+  }
+}
+
+static void renderLampOff()
+{
+  matrixFill(0, 0, 0);
+}
+
+static void renderLampScaled(uint8_t r, uint8_t g, uint8_t b, float scale)
+{
+  if (scale < 0.0f) scale = 0.0f;
+  if (scale > 1.0f) scale = 1.0f;
+
+  uint8_t rr = (uint8_t)(r * scale + 0.5f);
+  uint8_t gg = (uint8_t)(g * scale + 0.5f);
+  uint8_t bb = (uint8_t)(b * scale + 0.5f);
+
+  matrixFill(rr, gg, bb);
+}
+
+static void renderLampManual(uint32_t nowMs)
+{
+  if (!g_lampManualActive) return;
+
+  if (g_lampUntilMs && nowMs >= g_lampUntilMs)
+  {
+    g_lampManualActive = false;
+    g_lampModeManual = LMODE_OFF;
+    renderLampOff();
+    return;
+  }
+
+  if (g_lampModeManual == LMODE_WHITE)
+  {
+    float scale = (g_lampValueManual >= 100) ? 1.0f : 0.5f;
+    renderLampScaled(255, 255, 255, scale);
+    return;
+  }
+
+  if (g_lampModeManual == LMODE_COLOR)
+  {
+    if (g_lampValueManual == LCOLOR_RAINBOW)
+    {
+      const uint16_t W = matrixWidth();
+      const uint16_t H = matrixHeight();
+      uint32_t t = nowMs - g_lampFxStartMs;
+
+      for (uint16_t y = 0; y < H; ++y)
+      {
+        for (uint16_t x = 0; x < W; ++x)
+        {
+         uint8_t hue = (uint8_t)(((x + y) * 2 + t / 100) & 0xFF);
+          CHSV hsv(hue, 255, 128);
+          CRGB rgb;
+          hsv2rgb_rainbow(hsv, rgb);
+          matrixSetPixel((uint8_t)x, (uint8_t)y, rgb.g, rgb.r, rgb.b);
+        }
+      }
+      return;
+    }
+
+    float phase = ((nowMs - g_lampFxStartMs) % 2600) / 2600.0f;
+    float breath = 0.30f + 0.20f * (0.5f - 0.5f * cosf(phase * 2.0f * PI));
+
+    uint8_t r = 0, g = 0, b = 0;
+    switch (g_lampValueManual)
+    {
+      case LCOLOR_RED:     r = 255; g = 0;   b = 0;   break;
+      case LCOLOR_GREEN:   r = 0;   g = 255; b = 0;   break;
+      case LCOLOR_BLUE:    r = 0;   g = 0;   b = 255; break;
+      case LCOLOR_YELLOW:  r = 255; g = 255; b = 0;   break;
+      case LCOLOR_CYAN:    r = 0;   g = 255; b = 255; break;
+      case LCOLOR_MAGENTA: r = 255; g = 0;   b = 255; break;
+      default:
+        renderLampOff();
+        return;
+    }
+
+    renderLampScaled(r, g, b, breath);
+    return;
+  }
+
+  renderLampOff();
+}
+
+
+void animsLampSet(uint8_t mode, uint8_t value, uint8_t duration)
+{
+  g_lampModeManual = mode;
+  g_lampValueManual = value;
+  g_lampFxStartMs = millis();
+
+  if (mode == LMODE_OFF)
+  {
+    g_lampManualActive = false;
+    g_lampUntilMs = 0;
+    return;
+  }
+
+  g_lampManualActive = true;
+  g_lampUntilMs = millis() + lampDurationToMs(duration);
+}
+
+void animsLampOff()
+{
+  g_lampManualActive = false;
+  g_lampModeManual = LMODE_OFF;
+  g_lampValueManual = 0;
+  g_lampUntilMs = 0;
+}
+
+bool animsLampActive()
+{
+  return g_lampManualActive;
+}
+
+
+
 void animsOnGoal(uint8_t side, uint16_t durationMs) {
   g_goalSide = (side ? 1 : 0);
   g_goalDur  = durationMs;          // <-- to dodaj
@@ -266,15 +402,22 @@ void animsTick(uint32_t nowMs){
   if (nowMs - last < 25) return; // ~40 fps max
   last = nowMs;
 
-  switch (g_mode){
-    case ANIM_OFF:      renderOff();           break;
-    case ANIM_ROUND:    renderRound(nowMs);    break;
-    case ANIM_GOAL:     renderGoal(nowMs);     break;
-    case ANIM_GAMEOVER: renderGameOver(nowMs); break;
-    default:            renderOff();           break;
-  }
-
+if (g_lampManualActive)
+{
+  renderLampManual(nowMs);
   matrixShow();
+  return;
+}
+
+switch (g_mode){
+  case ANIM_OFF:      renderOff();           break;
+  case ANIM_ROUND:    renderRound(nowMs);    break;
+  case ANIM_GOAL:     renderGoal(nowMs);     break;
+  case ANIM_GAMEOVER: renderGameOver(nowMs); break;
+  default:            renderOff();           break;
+}
+
+matrixShow();
 }
 
 AnimMode animsGetMode() {

@@ -1,8 +1,8 @@
 #include "led_matrix.h"
 #include <FastLED.h>
 
-static const uint16_t W   = 64;
-static const uint16_t H   = 16;
+static const uint16_t W   = 16;
+static const uint16_t H   = 64;
 static const uint16_t NUM = W * H;
 constexpr uint8_t MATRIX_DATA_PIN = 12;
 

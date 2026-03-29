@@ -150,6 +150,40 @@ uint16_t adcBcenter = ADC_B_CENTER_DEFAULT;
 #define CAN_CMD_GOALCAL_IDLE    0x63
 #define CAN_CMD_GOALCAL_SAMPLE  0x64
 
+
+#define CAN_ID_LAMP_CMD     0x341
+#define CAN_CMD_LAMP_SCENE  0x70
+
+
+
+
+
+enum LampMode : uint8_t {
+  LMODE_OFF   = 0,
+  LMODE_WHITE = 1,
+  LMODE_COLOR = 2
+};
+
+enum LampColor : uint8_t {
+  LCOLOR_NONE    = 0,
+  LCOLOR_RED     = 1,
+  LCOLOR_GREEN   = 2,
+  LCOLOR_BLUE    = 3,
+  LCOLOR_YELLOW  = 4,
+  LCOLOR_CYAN    = 5,
+  LCOLOR_MAGENTA = 6,
+  LCOLOR_RAINBOW = 7
+};
+
+enum LampDuration : uint8_t {
+  LDUR_15MIN = 1,
+  LDUR_60MIN = 2,
+  LDUR_3H    = 3,
+  LDUR_6H    = 4
+};
+
+
+
 // nie wiem do czego to??? pod 9 jest btn down w rev1.3 
 //const int PIN = 9; // GPIO35 = ADC1_CH7
 
@@ -351,6 +385,26 @@ static void goalCalSendCancelToMain() {
 }
 
 
+void sendLamp(uint8_t mode, uint8_t value, uint8_t duration) {
+  uint8_t d[4];
+  d[0] = CAN_CMD_LAMP_SCENE;
+  d[1] = mode;      // OFF / WHITE / COLOR
+  d[2] = value;     // WHITE: 100/50 | COLOR: enum koloru
+  d[3] = duration;  // 15 / 60 / 3h / 6h
+
+  bool ok = canSendStd(CAN_ID_LAMP_CMD, d, 4);
+
+  Serial.print("[CAN] LAMP -> mode=");
+  Serial.print(mode);
+  Serial.print(" val=");
+  Serial.print(value);
+  Serial.print(" dur=");
+  Serial.print(duration);
+  Serial.print(" : ");
+  Serial.println(ok ? "OK" : "FAIL");
+}
+
+
 static inline uint32_t msLeft(uint32_t t_future){
   int32_t d = (int32_t)(t_future - millis());
   return d > 0 ? (uint32_t)d : 0;
@@ -391,6 +445,16 @@ void sendAdcThresholdsToMain() {
   Serial.printf("[ADC] sent thresholds to main A:%u-%u B:%u-%u\n",
                 adcAmin, adcAmax,
                 adcBmin, adcBmax);
+}
+
+void sendLampScene(uint8_t scene) {
+  const uint8_t d[2] = { CAN_CMD_LAMP_SCENE, scene };
+  bool ok = canSendStd(CAN_ID_LAMP_CMD, d, 2);
+
+  Serial.print("[CAN] Lamp scene -> ");
+  Serial.print(scene);
+  Serial.print(" : ");
+  Serial.println(ok ? "OK" : "FAIL");
 }
 
 // WYŚLIJ ustawienia (raz) + krótko poczekaj na ACK (opcjonalnie)
@@ -973,7 +1037,13 @@ enum Screen {
   SCR_COINS,            // Coin counter
 
   SCR_COINROOT,        // Coin counter >
-  SCR_COINLOG         // Latest entries
+  SCR_COINLOG,         // Latest entries
+
+  //LAMPA
+  SCR_LAMPROOT,       // Turn ON lamp >
+  SCR_LAMPWHITE,      // White >
+  SCR_LAMPCOLOUR,     // Colour >
+  SCR_LAMPCOLOUR_TIME // Time >
 };
 
 Screen current     = SCR_MAIN;
@@ -1000,6 +1070,11 @@ int selPuckLock = 0;
 int selSetDt = 0;
 int selDst   = 0;
 int selGoalCal = 0;
+int selLampRoot   = 0;
+int selLampWhite  = 0;
+int selLampColour = 0;
+int selLampColourTime = 0;
+uint8_t pendingLampColor = LCOLOR_NONE;
 
 enum GoalCalMode : uint8_t {
   GCAL_NONE = 0,
@@ -1115,6 +1190,7 @@ bool coinlogGetNewest(int newestIndex, CoinLogEntry& out) {
 const char* mainItems[] = {
   "Play >",
   "Settings >",
+  "Turn ON lamp >",
   "About",
   "Coin counter >",
   //"Wrzuc 5 zl (test)",
@@ -1140,6 +1216,45 @@ const char* settingsItems[] = {
 };
 const uint8_t settingsCount = sizeof(settingsItems)/sizeof(settingsItems[0]);
 
+// LAMPA
+const char* lampRootItems[] = {
+  "White >",
+  "Colour >",
+  "OFF"
+};
+const uint8_t lampRootCount = sizeof(lampRootItems) / sizeof(lampRootItems[0]);
+
+const char* lampWhiteItems[] = {
+  "100% 15'",
+  "100% 60'",
+  "100% 180'",
+  "50% 15'",
+  "50% 60'",
+  "50% 180'",
+  "OFF"
+};
+const uint8_t lampWhiteCount = sizeof(lampWhiteItems) / sizeof(lampWhiteItems[0]);
+
+const char* lampColourItems[] = {
+  "Red >",
+  "Green >",
+  "Blue >",
+  "Yellow >",
+  "Cyan >",
+  "Magenta >",
+  "Rainbow >",
+ 
+};
+const uint8_t lampColourCount = sizeof(lampColourItems) / sizeof(lampColourItems[0]);
+
+
+const char* lampColourTimeItems[] = {
+  "15 min",
+  "60 min",
+  "3 h",
+  "6 h"
+};
+const uint8_t lampColourTimeCount = sizeof(lampColourTimeItems) / sizeof(lampColourTimeItems[0]);
 
 //Podmenu coin counter
 const char* coinRootItems[] = {
@@ -2337,6 +2452,25 @@ void redraw() {
       drawCoinRoot(); break;
     case SCR_COINLOG:
       coinlogRedrawWindowFast();break;
+
+    //LAMPA
+    case SCR_LAMPROOT:
+      drawMenuList("Turn ON lamp", lampRootItems, lampRootCount, selLampRoot);
+      break;
+
+    case SCR_LAMPWHITE:
+      drawMenuList("White", lampWhiteItems, lampWhiteCount, selLampWhite);
+      break;
+
+    case SCR_LAMPCOLOUR:
+      drawMenuList("Colour", lampColourItems, lampColourCount, selLampColour);
+      break;
+
+    case SCR_LAMPCOLOUR_TIME:
+     drawMenuList("Time", lampColourTimeItems, lampColourTimeCount, selLampColourTime);
+     break;
+
+
   }
 
   // Footer z zegarem: tylko na ekranach menu/ustawień (nie na fullscreen)
@@ -3288,6 +3422,24 @@ if (pressedNow(bUp) || repeatNow(bUp)) {
     case SCR_UVLIGHT:
     case SCR_GOALILLUM:  selBin       = wrapPrev(selBin,       onOffCount);      break;
 
+    //lampa
+    case SCR_LAMPROOT:
+      selLampRoot = wrapPrev(selLampRoot, lampRootCount);
+      break;
+
+    case SCR_LAMPWHITE:
+      selLampWhite = wrapPrev(selLampWhite, lampWhiteCount);
+      break;
+
+    case SCR_LAMPCOLOUR:
+      selLampColour = wrapPrev(selLampColour, lampColourCount);
+      break;
+
+    case SCR_LAMPCOLOUR_TIME:
+     selLampColourTime = wrapPrev(selLampColourTime, lampColourTimeCount);
+     need = true;
+     break;
+
     // Potwierdzenie YES/NO
     case SCR_PLAYCONFIRM: selConfirm = (selConfirm + 1) % 2;                     break;
 
@@ -3374,6 +3526,24 @@ if (pressedNow(bDown) || repeatNow(bDown)) {
     case SCR_UVLIGHT:
     case SCR_GOALILLUM:  selBin       = wrapNext(selBin,       onOffCount);      break;
 
+    //lampa
+    case SCR_LAMPROOT:
+      selLampRoot = wrapNext(selLampRoot, lampRootCount);
+      break;
+
+    case SCR_LAMPWHITE:
+      selLampWhite = wrapNext(selLampWhite, lampWhiteCount);
+      break;
+
+    case SCR_LAMPCOLOUR:
+      selLampColour = wrapNext(selLampColour, lampColourCount);
+      break;
+
+    case SCR_LAMPCOLOUR_TIME:
+      selLampColourTime = wrapNext(selLampColourTime, lampColourTimeCount);
+      need = true;
+      break;
+
     // Potwierdzenie YES/NO
     case SCR_PLAYCONFIRM: selConfirm = (selConfirm + 1) % 2;                     break;
 
@@ -3432,17 +3602,18 @@ if (pressedNow(bSelect)) {
   switch (current) {
 
     // ───────── Main menu ─────────
-    case SCR_MAIN:
-      if      (selMain == 0) { enterScreen(SCR_PLAYROOT);  selPlayRoot  = 0; need = true; }
-      else if (selMain == 1) { enterScreen(SCR_SETTINGS);  selSettings  = 0; need = true; }
-      else if (selMain == 2) { enterScreen(SCR_OTHER);                     need = true; }
-      else if (selMain == 3) { enterScreen(SCR_COINROOT); selCoinRoot   = 0; need = true; }
-      else if (selMain == 4) {
+case SCR_MAIN:
+  if      (selMain == 0) { enterScreen(SCR_PLAYROOT);  selPlayRoot  = 0; need = true; }
+  else if (selMain == 1) { enterScreen(SCR_SETTINGS);  selSettings  = 0; need = true; }
+  else if (selMain == 2) { enterScreen(SCR_LAMPROOT);  selLampRoot  = 0; need = true; }
+  else if (selMain == 3) { enterScreen(SCR_OTHER);                     need = true; }
+  else if (selMain == 4) { enterScreen(SCR_COINROOT); selCoinRoot   = 0; need = true; }
+      else if (selMain == 5) {
         bool ok = incCoin5("test");
         if (ok) showOK("Dodano: 5 zl"); else showERROR("5 zl (brak SD, tylko RAM)");
         delay(400); need = true;
       }
-      else if (selMain == 5) {
+      else if (selMain == 6) {
         bool ok = incCoin2("test");
         if (ok) showOK("Dodano: 2 zl"); else showERROR("2 zl (brak SD, tylko RAM)");
         delay(400); need = true;
@@ -3610,6 +3781,59 @@ case SCR_GOALCAL_RUN:
     case SCR_SETDT_EDIT:
       setdtNextFieldOrSave();
       need = true; break;
+
+
+case SCR_LAMPROOT:
+  if (selLampRoot == 0) {
+    enterScreen(SCR_LAMPWHITE);
+    selLampWhite = 0;
+  } else if (selLampRoot == 1) {
+    enterScreen(SCR_LAMPCOLOUR);
+    selLampColour = 0;
+  } else if (selLampRoot == 2) {
+    sendLamp(LMODE_OFF, 0, 0);
+    showOK("Lamp OFF");
+    delay(700);
+    // tutaj zostaje w tym menu
+  }
+  need = true;
+  break;
+
+case SCR_LAMPWHITE:
+  if      (selLampWhite == 0) { sendLamp(LMODE_WHITE, 100, LDUR_15MIN); showOK("100% 15m"); delay(700); }
+  else if (selLampWhite == 1) { sendLamp(LMODE_WHITE, 100, LDUR_60MIN); showOK("100% 60m"); delay(700); }
+  else if (selLampWhite == 2) { sendLamp(LMODE_WHITE, 100, LDUR_3H);    showOK("100% 3h");  delay(700); }
+  else if (selLampWhite == 3) { sendLamp(LMODE_WHITE,  50, LDUR_15MIN); showOK("50% 15m");  delay(700); }
+  else if (selLampWhite == 4) { sendLamp(LMODE_WHITE,  50, LDUR_60MIN); showOK("50% 60m");  delay(700); }
+  else if (selLampWhite == 5) { sendLamp(LMODE_WHITE,  50, LDUR_3H);    showOK("50% 3h");   delay(700); }
+  else if (selLampWhite == 6) {
+    sendLamp(LMODE_OFF, 0, 0);
+    showOK("Lamp OFF");
+    delay(700);
+    goBack();   // wraca do Turn ON lamp
+  }
+  need = true;
+  break;
+
+case SCR_LAMPCOLOUR:
+  if      (selLampColour == 0) { pendingLampColor = LCOLOR_RED;     enterScreen(SCR_LAMPCOLOUR_TIME); selLampColourTime = 0; }
+  else if (selLampColour == 1) { pendingLampColor = LCOLOR_GREEN;   enterScreen(SCR_LAMPCOLOUR_TIME); selLampColourTime = 0; }
+  else if (selLampColour == 2) { pendingLampColor = LCOLOR_BLUE;    enterScreen(SCR_LAMPCOLOUR_TIME); selLampColourTime = 0; }
+  else if (selLampColour == 3) { pendingLampColor = LCOLOR_YELLOW;  enterScreen(SCR_LAMPCOLOUR_TIME); selLampColourTime = 0; }
+  else if (selLampColour == 4) { pendingLampColor = LCOLOR_CYAN;    enterScreen(SCR_LAMPCOLOUR_TIME); selLampColourTime = 0; }
+  else if (selLampColour == 5) { pendingLampColor = LCOLOR_MAGENTA; enterScreen(SCR_LAMPCOLOUR_TIME); selLampColourTime = 0; }
+  else if (selLampColour == 6) { pendingLampColor = LCOLOR_RAINBOW; enterScreen(SCR_LAMPCOLOUR_TIME); selLampColourTime = 0; }
+
+  need = true;
+  break;
+
+  case SCR_LAMPCOLOUR_TIME:
+  if      (selLampColourTime == 0) { sendLamp(LMODE_COLOR, pendingLampColor, LDUR_15MIN); showOK("ON 15m"); delay(700); goBack(); }
+  else if (selLampColourTime == 1) { sendLamp(LMODE_COLOR, pendingLampColor, LDUR_60MIN); showOK("ON 60m"); delay(700); goBack(); }
+  else if (selLampColourTime == 2) { sendLamp(LMODE_COLOR, pendingLampColor, LDUR_3H);    showOK("ON 3h");  delay(700); goBack(); }
+  else if (selLampColourTime == 3) { sendLamp(LMODE_COLOR, pendingLampColor, LDUR_6H);    showOK("ON 6h");  delay(700); goBack(); }
+  need = true;
+  break;
 
 case SCR_DST:
   dstMode = (selDst == 0) ? DST_AUTO_CHANGE : DST_NO_CHANGE;

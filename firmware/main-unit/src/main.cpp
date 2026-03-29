@@ -22,16 +22,36 @@ static uint32_t g_strobeIntervalMs = 0;
 static uint32_t g_strobeLastToggleMs = 0;
 static bool g_strobeLampOn = false;
 
+
 static inline void lampOff()
 {
   matrixFill(0, 0, 0);
   matrixShow();
 }
 
-static inline void lampOnSteady()
+static inline void lampFillScaled(uint8_t r, uint8_t g, uint8_t b, float scale)
 {
-  matrixFill(255, 255, 255); // jak za mocno: daj np. 120
+  if (scale < 0.0f) scale = 0.0f;
+  if (scale > 1.0f) scale = 1.0f;
+
+  uint8_t rr = (uint8_t)(r * scale + 0.5f);
+  uint8_t gg = (uint8_t)(g * scale + 0.5f);
+  uint8_t bb = (uint8_t)(b * scale + 0.5f);
+
+  matrixFill(rr, gg, bb);
   matrixShow();
+}
+
+static uint32_t lampDurationToMs(uint8_t d)
+{
+  switch (d)
+  {
+    case LDUR_15MIN: return 15UL * 60UL * 1000UL;
+    case LDUR_60MIN: return 60UL * 60UL * 1000UL;
+    case LDUR_3H:    return 3UL  * 60UL * 60UL * 1000UL;
+    case LDUR_6H:    return 6UL  * 60UL * 60UL * 1000UL;
+    default:         return 0;
+  }
 }
 
 
@@ -593,6 +613,14 @@ static inline void puckTick()
 #define CAN_CMD_MINIGAME_AUDIO 0x50
 #define CAN_AUDIO_STOP 0x00
 #define CAN_AUDIO_PLAY_TETRIS 0x01
+
+
+//Lampa
+#define CAN_ID_LAMP_CMD     0x341
+#define CAN_CMD_LAMP_SCENE  0x70
+
+
+
 
 static uint32_t g_roundGuardUntilMs = 0; // przez ten czas nie kończymy rundy
 
@@ -2827,12 +2855,40 @@ void loop()
       }
     }
 
+    // Lamp command
+// Lamp command
+if (!msg.extd && !msg.rtr &&
+    msg.identifier == CAN_ID_LAMP_CMD &&
+    msg.data_length_code >= 4 &&
+    msg.data[0] == CAN_CMD_LAMP_SCENE)
+{
+  handled = true;
+  logFrame(msg);
+
+  uint8_t mode     = msg.data[1];
+  uint8_t value    = msg.data[2];
+  uint8_t duration = msg.data[3];
+
+  if (mode == LMODE_OFF)
+  {
+    animsLampOff();
+    Serial.println("[LAMP] OFF");
+  }
+  else
+  {
+    animsLampSet(mode, value, duration);
+    Serial.printf("[LAMP] mode=%u value=%u duration=%u\n",
+                  mode, value, duration);
+  }
+}
+
     // other frames
     if (!handled)
     {
       logFrame(msg);
     }
   }
+
 
   // --- State machine ---
   switch (g_state)
@@ -3094,25 +3150,30 @@ else
   {
     applyPostGameLights();
   }
-  else if (g_state == GState::IDLE || g_state == GState::WAIT_PUCK_CLEAR)
+  else if (animsLampActive())
+{
+  animsTick(now);
+  ledcWrite(UV_PWM_CH, 0);
+}
+else if (g_state == GState::IDLE || g_state == GState::WAIT_PUCK_CLEAR)
+{
+  matrixFill(0, 0, 0);
+  matrixShow();
+  ledcWrite(UV_PWM_CH, 0);
+}
+else
+{
+  animsTick(now);
+
+  if (flagOn(g_set.flags, F_UV))
   {
-    matrixFill(0, 0, 0);
-    matrixShow();
-    ledcWrite(UV_PWM_CH, 0);
+    ledcWrite(UV_PWM_CH, pwmDuty12(0.40f));
   }
   else
   {
-    animsTick(now);
-
-    if (flagOn(g_set.flags, F_UV))
-    {
-      ledcWrite(UV_PWM_CH, pwmDuty12(0.40f));
-    }
-    else
-    {
-      ledcWrite(UV_PWM_CH, 0);
-    }
+    ledcWrite(UV_PWM_CH, 0);
   }
+}
 }
 }
 
