@@ -914,7 +914,7 @@ static const ThemeInfo THEMES[TH_COUNT] = {
 
 // Music-round duration per theme (theme 1..6 -> g_theme 0..5)
 static const uint32_t MUSIC_ROUND_TIME_MS[TH_COUNT] = {
-    4000UL, // teensies   1:54 //114000
+    114000UL, // teensies     1:54 //114000
     86000UL,  // toad       1:26
     85000UL,  // fiesta     1:25
     100000UL, // 20000lums  1:40
@@ -2290,6 +2290,15 @@ static void adcThreshLoadFromNVS()
                 adcThreshBmin, adcThreshBmax);
 }
 
+static uint16_t xyToIndex(uint8_t x, uint8_t y)
+{
+  // matryca 16x64, serpentyna po wierszach
+  if (y % 2 == 0)
+    return y * 16 + x;
+  else
+    return y * 16 + (15 - x);
+}
+
 static void showPurpleWithCorners(uint8_t bgLevel)
 {
   const uint8_t cornerR = 150;
@@ -2299,26 +2308,33 @@ static void showPurpleWithCorners(uint8_t bgLevel)
   // tło całej matrycy
   matrixFill(bgLevel, 0, bgLevel);
 
-  // rogi zawsze na stałe 100%
-  matrixSetIndex(0,    cornerR, cornerG, cornerB);
-  matrixSetIndex(31,   cornerR, cornerG, cornerB);
-  matrixSetIndex(1,    cornerR, cornerG, cornerB);
-  matrixSetIndex(30,   cornerR, cornerG, cornerB);
+  // 3x3 lewy górny
+  for (uint8_t y = 0; y < 3; y++) {
+    for (uint8_t x = 0; x < 3; x++) {
+      matrixSetIndex(xyToIndex(x, y), cornerR, cornerG, cornerB);
+    }
+  }
 
-  matrixSetIndex(14,   cornerR, cornerG, cornerB);
-  matrixSetIndex(17,   cornerR, cornerG, cornerB);
-  matrixSetIndex(15,   cornerR, cornerG, cornerB);
-  matrixSetIndex(16,   cornerR, cornerG, cornerB);
+  // 3x3 prawy górny
+  for (uint8_t y = 0; y < 3; y++) {
+    for (uint8_t x = 13; x < 16; x++) {
+      matrixSetIndex(xyToIndex(x, y), cornerR, cornerG, cornerB);
+    }
+  }
 
-  matrixSetIndex(992,  cornerR, cornerG, cornerB);
-  matrixSetIndex(1023, cornerR, cornerG, cornerB);
-  matrixSetIndex(993,  cornerR, cornerG, cornerB);
-  matrixSetIndex(1022, cornerR, cornerG, cornerB);
+  // 3x3 lewy dolny
+  for (uint8_t y = 61; y < 64; y++) {
+    for (uint8_t x = 0; x < 3; x++) {
+      matrixSetIndex(xyToIndex(x, y), cornerR, cornerG, cornerB);
+    }
+  }
 
-  matrixSetIndex(1006, cornerR, cornerG, cornerB);
-  matrixSetIndex(1009, cornerR, cornerG, cornerB);
-  matrixSetIndex(1007, cornerR, cornerG, cornerB);
-  matrixSetIndex(1008, cornerR, cornerG, cornerB);
+  // 3x3 prawy dolny
+  for (uint8_t y = 61; y < 64; y++) {
+    for (uint8_t x = 13; x < 16; x++) {
+      matrixSetIndex(xyToIndex(x, y), cornerR, cornerG, cornerB);
+    }
+  }
 
   matrixShow();
 }
@@ -2329,7 +2345,7 @@ static void applyPostGameLights()
 
   if (uvEnabled)
   {
-    uvSetLevel(0.01f);   // 1% UV przez 10 min
+    uvSetLevel(0.03f);   // 1% UV przez 10 min
     matrixFill(0, 0, 0);
     matrixShow();
   }
