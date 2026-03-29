@@ -2665,6 +2665,10 @@ static inline bool uvShouldBeOn()
 
 void loop()
 {
+  // =========================================================
+  // 1) POST-GAME TIMEOUT
+  // =========================================================
+  // Po 10 minutach od końca gry gasimy wszystko całkowicie.
   if (g_postGameActive)
   {
     uint32_t now = millis();
@@ -2680,94 +2684,113 @@ void loop()
     }
   }
 
+  // =========================================================
+  // 2) TICKI OGÓLNE / DEBUG / AUDIO
+  // =========================================================
   serialPoll();
   adcWatchPoll();
   musicAutoAdvanceTick();
-
-
-
   goalCalMainTick();
 
+  // =========================================================
+  // 3) ODBIÓR CAN
+  // =========================================================
   twai_message_t msg;
   if (twai_receive(&msg, pdMS_TO_TICKS(10)) == ESP_OK)
   {
-  bool handled = false;
+    bool handled = false;
 
-  puckOnCan(msg);
+    // ---------------------------------------------------------
+    // 3.1) Puck-lock low level handler
+    // ---------------------------------------------------------
+    // To ma działać zawsze, niezależnie od dalszego parsowania.
+    puckOnCan(msg);
 
-  // ===== odbiór nowych progów ADC z settings =====
-  if (!msg.extd && !msg.rtr &&
-      msg.identifier == 0x360 &&
-      msg.data_length_code == 8)
-  {
-    adcThreshAmin = ((uint16_t)msg.data[0] << 8) | msg.data[1];
-    adcThreshAmax = ((uint16_t)msg.data[2] << 8) | msg.data[3];
-    adcThreshBmin = ((uint16_t)msg.data[4] << 8) | msg.data[5];
-    adcThreshBmax = ((uint16_t)msg.data[6] << 8) | msg.data[7];
-
-    Serial.printf("[ADC] thresholds updated A:%u-%u B:%u-%u\n",
-                  adcThreshAmin, adcThreshAmax,
-                  adcThreshBmin, adcThreshBmax);
-
-                  adcThreshSaveToNVS();
-
-    handled = true;
-  }
-
-  // START GAME
-  if (!msg.extd && !msg.rtr &&
-      msg.identifier == CAN_ID_START_GAME &&
-      msg.data_length_code >= 3 &&
-      msg.data[0] == CAN_CMD_START_GAME)
-  {
-    uint8_t gtype = msg.data[1], gindex = msg.data[2];
-    sayStart(gtype, gindex);
-    sendAck();
-    if (gtype == GT_FULL)
+    // ---------------------------------------------------------
+    // 3.2) ADC thresholds update z settings-unit
+    // CAN ID 0x360, payload 8 bajtów:
+    // [AminH AminL AmaxH AmaxL BminH BminL BmaxH BmaxL]
+    // ---------------------------------------------------------
+    if (!msg.extd && !msg.rtr &&
+        msg.identifier == 0x360 &&
+        msg.data_length_code == 8)
     {
-      gameStartFull(gindex);
+      adcThreshAmin = ((uint16_t)msg.data[0] << 8) | msg.data[1];
+      adcThreshAmax = ((uint16_t)msg.data[2] << 8) | msg.data[3];
+      adcThreshBmin = ((uint16_t)msg.data[4] << 8) | msg.data[5];
+      adcThreshBmax = ((uint16_t)msg.data[6] << 8) | msg.data[7];
+
+      Serial.printf("[ADC] thresholds updated A:%u-%u B:%u-%u\n",
+                    adcThreshAmin, adcThreshAmax,
+                    adcThreshBmin, adcThreshBmax);
+
+      adcThreshSaveToNVS();
+      handled = true;
     }
-   else if (gtype == GT_MUSIC)
-{
-  if (gindex < TH_COUNT)
-  {
-    g_musicOnlyMode = true;
-    g_theme = (ThemeId)gindex;
 
-    g_fullIndex = 0;
-    g_roundNo = 0;
-    g_roundsWonA = g_roundsWonB = 0;
-    g_round.scoreA = g_round.scoreB = 0;
+    // ---------------------------------------------------------
+    // 3.3) START GAME
+    // ---------------------------------------------------------
+    if (!msg.extd && !msg.rtr &&
+        msg.identifier == CAN_ID_START_GAME &&
+        msg.data_length_code >= 3 &&
+        msg.data[0] == CAN_CMD_START_GAME)
+    {
+      handled = true;
 
-    poolResetTheme();
-    g_bgPlaying = false;
+      uint8_t gtype  = msg.data[1];
+      uint8_t gindex = msg.data[2];
 
-    Serial.printf("[GAME] MUSIC-ONLY: theme=%s (folder %02u)\n",
-                  THEMES[g_theme].name,
-                  THEMES[g_theme].folder);
+      sayStart(gtype, gindex);
+      sendAck();
 
-    g_state = GState::PREPARE;
-  }
-  else
-  {
-    gameStartMusicOnlyRandom();
-  }
-}
+      if (gtype == GT_FULL)
+      {
+        gameStartFull(gindex);
+      }
+      else if (gtype == GT_MUSIC)
+      {
+        if (gindex < TH_COUNT)
+        {
+          g_musicOnlyMode = true;
+          g_theme = (ThemeId)gindex;
+
+          g_fullIndex = 0;
+          g_roundNo = 0;
+          g_roundsWonA = g_roundsWonB = 0;
+          g_round.scoreA = g_round.scoreB = 0;
+
+          poolResetTheme();
+          g_bgPlaying = false;
+
+          Serial.printf("[GAME] MUSIC-ONLY: theme=%s (folder %02u)\n",
+                        THEMES[g_theme].name,
+                        THEMES[g_theme].folder);
+
+          g_state = GState::PREPARE;
+        }
+        else
+        {
+          gameStartMusicOnlyRandom();
+        }
+      }
       else
       {
         Serial.printf("[START] Unknown game type %u\n", gtype);
       }
     }
 
-    
-    // Goal calibration control
+    // ---------------------------------------------------------
+    // 3.4) Goal calibration control
+    // ---------------------------------------------------------
     if (!msg.extd && !msg.rtr &&
         msg.identifier == CAN_ID_GOALCAL_CMD &&
         msg.data_length_code >= 1)
     {
       handled = true;
 
-      switch (msg.data[0]) {
+      switch (msg.data[0])
+      {
         case CAN_CMD_GOALCAL_START_A:
           Serial.println("[CAN] GoalCal START A");
           goalCalMainStart(GCALM_A);
@@ -2789,61 +2812,83 @@ void loop()
       }
     }
 
-    // Settings update
-    if (!msg.extd && !msg.rtr && msg.identifier == CAN_ID_SETTINGS && msg.data_length_code >= 4 && msg.data[0] == CAN_CMD_SETTINGS)
+    // ---------------------------------------------------------
+    // 3.5) Settings update
+    // ---------------------------------------------------------
+    if (!msg.extd && !msg.rtr &&
+        msg.identifier == CAN_ID_SETTINGS &&
+        msg.data_length_code >= 4 &&
+        msg.data[0] == CAN_CMD_SETTINGS)
     {
+      handled = true;
+
       g_set.gameTimeIdx = msg.data[1];
-      g_set.goalsIdx = msg.data[2];
-      g_set.flags = msg.data[3];
+      g_set.goalsIdx    = msg.data[2];
+      g_set.flags       = msg.data[3];
+
       settingsSaveToNVS();
-      Serial.println("[CAN] SettingsUpdate → saved");
+
+      Serial.println("[CAN] SettingsUpdate -> saved");
       printSettings(g_set);
       sendSettingsAck();
     }
 
-    // PuckLock NOW – pretty log (keeps your old DATA line)
-    if (!msg.extd && !msg.rtr && msg.identifier == CAN_ID_PUCKLOCK_CMD && msg.data_length_code >= 2 && msg.data[0] == CAN_CMD_PUCKLOCK_NOW)
+    // ---------------------------------------------------------
+    // 3.6) PuckLock NOW – log
+    // ---------------------------------------------------------
+    if (!msg.extd && !msg.rtr &&
+        msg.identifier == CAN_ID_PUCKLOCK_CMD &&
+        msg.data_length_code >= 2 &&
+        msg.data[0] == CAN_CMD_PUCKLOCK_NOW)
     {
-      logFrame(msg);
       handled = true;
+      logFrame(msg);
+
       uint8_t act = msg.data[1];
+
       if (act == CAN_PUCK_LOCK)
       {
         if (msg.data_length_code >= 3)
         {
           uint8_t mask = msg.data[2];
-          Serial.printf("           → PUCKLOCK: Lock now  (A=%d, B=%d)\n", (mask & 1) != 0, (mask & 2) != 0);
+          Serial.printf("           -> PUCKLOCK: Lock now   (A=%d, B=%d)\n",
+                        (mask & 1) != 0, (mask & 2) != 0);
         }
         else
-          Serial.println("           → PUCKLOCK: Lock now  (A+B)");
+        {
+          Serial.println("           -> PUCKLOCK: Lock now   (A+B)");
+        }
       }
       else if (act == CAN_PUCK_UNLOCK)
       {
         if (msg.data_length_code >= 3)
         {
           uint8_t mask = msg.data[2];
-          Serial.printf("           → PUCKLOCK: Unlock now (A=%d, B=%d)\n", (mask & 1) != 0, (mask & 2) != 0);
+          Serial.printf("           -> PUCKLOCK: Unlock now (A=%d, B=%d)\n",
+                        (mask & 1) != 0, (mask & 2) != 0);
         }
         else
-          Serial.println("           → PUCKLOCK: Unlock now (A+B)");
+        {
+          Serial.println("           -> PUCKLOCK: Unlock now (A+B)");
+        }
       }
       else
       {
-        Serial.printf("           → PUCKLOCK: UNKNOWN action=0x%02X\n", act);
+        Serial.printf("           -> PUCKLOCK: UNKNOWN action=0x%02X\n", act);
       }
     }
 
-    // PlayMusicTetris
-
-    // Minigame audio: Tetris
+    // ---------------------------------------------------------
+    // 3.7) Minigame audio: Tetris
+    // ---------------------------------------------------------
     if (!msg.extd && !msg.rtr &&
         msg.identifier == CAN_ID_MINIGAME_AUDIO &&
         msg.data_length_code >= 2 &&
         msg.data[0] == CAN_CMD_MINIGAME_AUDIO)
     {
-
-      logFrame(msg);
       handled = true;
+      logFrame(msg);
+
       if (msg.data[1] == CAN_AUDIO_PLAY_TETRIS)
       {
         musicPlayTetris();
@@ -2855,238 +2900,254 @@ void loop()
       }
     }
 
-    // Lamp command
-// Lamp command
-if (!msg.extd && !msg.rtr &&
-    msg.identifier == CAN_ID_LAMP_CMD &&
-    msg.data_length_code >= 4 &&
-    msg.data[0] == CAN_CMD_LAMP_SCENE)
-{
-  handled = true;
-  logFrame(msg);
+    // ---------------------------------------------------------
+    // 3.8) Lamp command
+    // Ręczna lampa ma działać przez anims.cpp, nie przez lokalne
+    // zmienne w main.cpp.
+    // ---------------------------------------------------------
+    if (!msg.extd && !msg.rtr &&
+        msg.identifier == CAN_ID_LAMP_CMD &&
+        msg.data_length_code >= 4 &&
+        msg.data[0] == CAN_CMD_LAMP_SCENE)
+    {
+      handled = true;
+      logFrame(msg);
 
-  uint8_t mode     = msg.data[1];
-  uint8_t value    = msg.data[2];
-  uint8_t duration = msg.data[3];
+      uint8_t mode     = msg.data[1];
+      uint8_t value    = msg.data[2];
+      uint8_t duration = msg.data[3];
 
-  if (mode == LMODE_OFF)
-  {
-    animsLampOff();
-    Serial.println("[LAMP] OFF");
-  }
-  else
-  {
-    animsLampSet(mode, value, duration);
-    Serial.printf("[LAMP] mode=%u value=%u duration=%u\n",
-                  mode, value, duration);
-  }
-}
+      // porządkowo: jeśli akurat był aktywny debug strobe,
+      // to go zdejmujemy
+      g_strobeActive = false;
+      g_strobeLampOn = false;
 
-    // other frames
+      if (mode == LMODE_OFF)
+      {
+        animsLampOff();
+        Serial.println("[LAMP] OFF");
+      }
+      else
+      {
+        animsLampSet(mode, value, duration);
+        Serial.printf("[LAMP] mode=%u value=%u duration=%u\n",
+                      mode, value, duration);
+      }
+    }
+
+    // ---------------------------------------------------------
+    // 3.9) Inne ramki – tylko log
+    // ---------------------------------------------------------
     if (!handled)
     {
       logFrame(msg);
     }
   }
 
-
-  // --- State machine ---
+  // =========================================================
+  // 4) STATE MACHINE
+  // =========================================================
   switch (g_state)
   {
-  case GState::IDLE:
-  {
-    // do nothing
-  }
-  break;
-
-  case GState::PREPARE:
-  {
-    // Give panel a short chance to push latest settings just after START
-    settingsSyncWindow(250);
-    // blower on, apply lights as ambient ready, unlock locks just in case
-    blowerSet(true);
-    lightsApplyFromFlags();
-    puckLockAutoReset();
-    puckLockUnlockAll();
-    // Log mapping actually used
-    Serial.printf("[ROUND] SETTINGS USED → goals=%u (idx=%u), time=%lus (idx=%u)",
-                  mapGoalsIdxToCount(g_set.goalsIdx), g_set.goalsIdx,
-                  (unsigned long)mapTimeIdxToSeconds(g_set.gameTimeIdx), g_set.gameTimeIdx);
-    startCountdown();
-    countdownBegin();
-  }
-    g_state = GState::COUNTDOWN;
+    case GState::IDLE:
+    {
+      // Nic nie robimy. Czekamy na START.
+    }
     break;
 
-  case GState::COUNTDOWN:
-  {
-    if (countdownTick())
+    case GState::PREPARE:
     {
+      // Daj settings-unit krótkie okno na dosłanie najnowszych ustawień
+      // tuż po START.
+      settingsSyncWindow(250);
+
       blowerSet(true);
+      lightsApplyFromFlags();
+      puckLockAutoReset();
+      puckLockUnlockAll();
 
-      if (g_musicOnlyMode)
-      {
-        g_state = GState::ROUND_MUSIC;
-        startMusicRound(); // -> u Ciebie odpala musicPlayMusicRound() => 010.mp3
-      }
-      else
-      {
-        // start Round 1 (normal)
-        g_roundsWonA = g_roundsWonB = 0;
-        poolResetTheme();
-        g_state = GState::ROUND_NORMAL;
-        startNormalRound();
-      }
+      Serial.printf("[ROUND] SETTINGS USED -> goals=%u (idx=%u), time=%lus (idx=%u)\n",
+                    mapGoalsIdxToCount(g_set.goalsIdx), g_set.goalsIdx,
+                    (unsigned long)mapTimeIdxToSeconds(g_set.gameTimeIdx), g_set.gameTimeIdx);
+
+      startCountdown();
+      countdownBegin();
+
+      g_state = GState::COUNTDOWN;
     }
-  }
-  break;
-
-  case GState::ROUND_NORMAL:
-  {
-    // goals
-    if ((int32_t)(millis() - g_roundGuardUntilMs) < 0)
-      break; // jeszcze nie sprawdzamy końca
-
-    int8_t goal = pollGoal();
-    if (goal == 0)
-    {
-      g_round.scoreA++;
-      sendScoreUpdate(g_round.scoreA, g_round.scoreB);
-      sendGoalAnim(0, 1);
-      sfxPlayIndex(random(1, 31));
-      Serial.printf("[GOAL] pollGoal()=%d  (ms=%lu)\n", (int)goal, (unsigned long)millis());
-      animsOnGoal((uint8_t)goal, 800);
-    }
-    else if (goal == 1)
-    {
-      g_round.scoreB++;
-      sendScoreUpdate(g_round.scoreA, g_round.scoreB);
-      sendGoalAnim(1, 1);
-      sfxPlayIndex(random(1, 31));
-      Serial.printf("[GOAL] pollGoal()=%d  (ms=%lu)\n", (int)goal, (unsigned long)millis());
-      animsOnGoal((uint8_t)goal, 800);
-    }
-
-    // puck-lock dynamics
-    updatePuckLockDuringRound();
-
-    // finish condition (first reached)
-    bool byGoals = (g_round.goalLimit &&
-                    (g_round.scoreA >= g_round.goalLimit ||
-                     g_round.scoreB >= g_round.goalLimit));
-    bool byTime = (g_round.timeLimited &&
-                   (millis() - g_round.tStart >= g_round.tLimitMs));
-
-    if (byGoals || byTime)
-    {
-      endRound();
-      puckLockCmd(true, 0x03);
-
-      animsSetMode(ANIM_OFF); // <<< GAŚ LAMPĘ PO RUNDZIE
-
-      g_state = GState::ROUND_BREAK;
-      g_breakT0 = millis();
-    }
-  }
-  break;
-
-  case GState::ROUND_BREAK:
-  {
-    if (millis() - g_breakT0 >= BREAK_MS)
-    {
-      if (g_roundNo < 2)
-      {
-        g_state = GState::ROUND_NORMAL;
-        startNormalRound();
-      }
-      else if (g_roundNo == 2)
-      {
-        g_state = GState::ROUND_MUSIC;
-        startMusicRound();
-      }
-      else
-      {
-        lightsSetMode(0);
-        g_state = GState::GAME_OVER;
-        
-        g_gameOverT0 = millis();
-        g_gameOverGuardUntilMs = millis() + 500;
-        musicPlayFolderFile(6, 11);
-      }
-    }
-  }
-  break;
-
-  case GState::ROUND_MUSIC:
-  {
-    if ((int32_t)(millis() - g_roundGuardUntilMs) < 0)
-      break; // guard
-
-    int8_t goal = pollGoal();
-    if (goal == 0)
-    {
-      g_round.scoreA++;
-      sendScoreUpdate(g_round.scoreA, g_round.scoreB);
-      sendGoalAnim(0, 2);
-      sfxPlayIndex(random(31, 51));
-      animsOnGoal(0, 800);
-    }
-    else if (goal == 1)
-    {
-      g_round.scoreB++;
-      sendScoreUpdate(g_round.scoreA, g_round.scoreB);
-      sendGoalAnim(1, 2);
-      sfxPlayIndex(random(31, 51));
-      animsOnGoal(1, 800);
-    }
-
-if (millis() - g_round.tStart >= g_round.tLimitMs)
-{
-  endRound();
-  sendGameEvent(3, g_roundsWonA, g_roundsWonB);
-  enterGameOver();
-}
-  }
-  break;
-
-  case GState::GAME_OVER:
-{
-  if ((int32_t)(millis() - g_gameOverGuardUntilMs) < 0)
     break;
 
-  if (blowerOn && (millis() - g_gameOverT0) >= GAMEOVER_BLOWER_TIMEOUT_MS)
-  {
-    blowerSet(false);
-    Serial.println("[BLOWER] GameOver timeout 3 min -> OFF");
-    g_state = GState::WAIT_PUCK_CLEAR;
+    case GState::COUNTDOWN:
+    {
+      if (countdownTick())
+      {
+        blowerSet(true);
+
+        if (g_musicOnlyMode)
+        {
+          g_state = GState::ROUND_MUSIC;
+          startMusicRound();
+        }
+        else
+        {
+          g_roundsWonA = g_roundsWonB = 0;
+          poolResetTheme();
+
+          g_state = GState::ROUND_NORMAL;
+          startNormalRound();
+        }
+      }
+    }
+    break;
+
+    case GState::ROUND_NORMAL:
+    {
+      // krótki guard po starcie rundy
+      if ((int32_t)(millis() - g_roundGuardUntilMs) < 0)
+        break;
+
+      int8_t goal = pollGoal();
+
+      if (goal == 0)
+      {
+        g_round.scoreA++;
+        sendScoreUpdate(g_round.scoreA, g_round.scoreB);
+        sendGoalAnim(0, 1);
+        sfxPlayIndex(random(1, 31));
+        Serial.printf("[GOAL] pollGoal()=%d  (ms=%lu)\n", (int)goal, (unsigned long)millis());
+        animsOnGoal((uint8_t)goal, 800);
+      }
+      else if (goal == 1)
+      {
+        g_round.scoreB++;
+        sendScoreUpdate(g_round.scoreA, g_round.scoreB);
+        sendGoalAnim(1, 1);
+        sfxPlayIndex(random(1, 31));
+        Serial.printf("[GOAL] pollGoal()=%d  (ms=%lu)\n", (int)goal, (unsigned long)millis());
+        animsOnGoal((uint8_t)goal, 800);
+      }
+
+      updatePuckLockDuringRound();
+
+      bool byGoals = (g_round.goalLimit &&
+                      (g_round.scoreA >= g_round.goalLimit ||
+                       g_round.scoreB >= g_round.goalLimit));
+
+      bool byTime = (g_round.timeLimited &&
+                     (millis() - g_round.tStart >= g_round.tLimitMs));
+
+      if (byGoals || byTime)
+      {
+        endRound();
+        puckLockCmd(true, 0x03);
+
+        // zwykłe animacje rundowe gasimy po końcu rundy,
+        // ale ręczna lampa i tak ma osobny priorytet w rendererze
+        animsSetMode(ANIM_OFF);
+
+        g_state = GState::ROUND_BREAK;
+        g_breakT0 = millis();
+      }
+    }
+    break;
+
+    case GState::ROUND_BREAK:
+    {
+      if (millis() - g_breakT0 >= BREAK_MS)
+      {
+        if (g_roundNo < 2)
+        {
+          g_state = GState::ROUND_NORMAL;
+          startNormalRound();
+        }
+        else if (g_roundNo == 2)
+        {
+          g_state = GState::ROUND_MUSIC;
+          startMusicRound();
+        }
+        else
+        {
+          enterGameOver();
+        }
+      }
+    }
+    break;
+
+    case GState::ROUND_MUSIC:
+    {
+      if ((int32_t)(millis() - g_roundGuardUntilMs) < 0)
+        break;
+
+      int8_t goal = pollGoal();
+
+      if (goal == 0)
+      {
+        g_round.scoreA++;
+        sendScoreUpdate(g_round.scoreA, g_round.scoreB);
+        sendGoalAnim(0, 2);
+        sfxPlayIndex(random(31, 51));
+        animsOnGoal(0, 800);
+      }
+      else if (goal == 1)
+      {
+        g_round.scoreB++;
+        sendScoreUpdate(g_round.scoreA, g_round.scoreB);
+        sendGoalAnim(1, 2);
+        sfxPlayIndex(random(31, 51));
+        animsOnGoal(1, 800);
+      }
+
+      if (millis() - g_round.tStart >= g_round.tLimitMs)
+      {
+        endRound();
+        sendGameEvent(3, g_roundsWonA, g_roundsWonB);
+        enterGameOver();
+      }
+    }
+    break;
+
+    case GState::GAME_OVER:
+    {
+      if ((int32_t)(millis() - g_gameOverGuardUntilMs) < 0)
+        break;
+
+      if (blowerOn && (millis() - g_gameOverT0) >= GAMEOVER_BLOWER_TIMEOUT_MS)
+      {
+        blowerSet(false);
+        Serial.println("[BLOWER] GameOver timeout 3 min -> OFF");
+        g_state = GState::WAIT_PUCK_CLEAR;
+        break;
+      }
+
+      int8_t goal = pollGoalForGameOver();
+
+      if (goal >= 0)
+      {
+        blowerSet(false);
+
+        applyPostGameLights();
+        g_state = GState::WAIT_PUCK_CLEAR;
+      }
+    }
+    break;
+
+    case GState::WAIT_PUCK_CLEAR:
+    {
+      // Stan bezpieczny po wyłączeniu dmuchawy.
+      // Czekamy na kolejny START.
+    }
     break;
   }
 
-
-
-  int8_t goal = pollGoalForGameOver();
-
-  if (goal >= 0)
-  {
-    blowerSet(false);
-
-    applyPostGameLights();
-    g_state = GState::WAIT_PUCK_CLEAR;
-  }
-}
-break;
-
-  case GState::WAIT_PUCK_CLEAR:
-  {
-    // idle safe state after blower off – wait for new START
-  }
-  break;
-  }
-
+  // =========================================================
+  // 5) TICKI KOŃCOWE
+  // =========================================================
   puckTick();
   remainLogTick();
 
-  // CAN auto-recovery
+  // =========================================================
+  // 6) CAN AUTO-RECOVERY
+  // =========================================================
   uint32_t alerts = 0;
   if (twai_read_alerts(&alerts, 0) == ESP_OK && alerts)
   {
@@ -3095,6 +3156,7 @@ break;
       Serial.println("[CAN] BUS_OFF -> recovery");
       twai_initiate_recovery();
     }
+
     if (alerts & TWAI_ALERT_BUS_RECOVERED)
     {
       Serial.println("[CAN] BUS_RECOVERED -> start()");
@@ -3102,67 +3164,109 @@ break;
     }
   }
 
-uint32_t now = millis();
+  // =========================================================
+  // 7) RENDER / ŚWIATŁA / UV
+  // PRIORYTETY:
+  //   1. ręczna lampa
+  //   2. debug strobe
+  //   3. BIN + UV pattern
+  //   4. game over ambient
+  //   5. idle / wait state
+  //   6. normalne animsTick()
+  // =========================================================
+  uint32_t now = millis();
 
-if (g_strobeActive)
-{
-  if (now - g_strobeLastToggleMs >= g_strobeIntervalMs)
+  // ---------------------------------------------------------
+  // 7.1) RĘCZNA LAMPA – absolutny priorytet nad wszystkim
+  // ---------------------------------------------------------
+  // Nie zatrzymujemy gry ani timingu BIN.
+  // Po prostu zasłaniamy wszystko innym renderem.
+  if (animsLampActive())
   {
-    g_strobeLastToggleMs = now;
-    g_strobeLampOn = !g_strobeLampOn;
+    animsTick(now);
+
+    // przy ręcznej lampie wyłączamy UV / ambiente UV
+    ledcWrite(UV_PWM_CH, 0);
+    return;
   }
 
-  if (g_strobeLampOn)
-    matrixFill(255, 255, 255);
-  else
-    matrixFill(0, 0, 0);
-
-  matrixShow();
-}
-else if (binPlaying)
-{
-  binUpdate(); // BIN ma ostatnie słowo na matrycy
-
-  UvLevel uvLevel = animsGetUvLevel(
-      flagOn(g_set.flags, F_UV),
-      true,
-      (uint8_t)g_theme,
-      now - g_musicStartMs);
-
-  switch (uvLevel)
+  // ---------------------------------------------------------
+  // 7.2) DEBUG STROBE
+  // ---------------------------------------------------------
+  if (g_strobeActive)
   {
-    case UV_LEVEL_OFF:
-      ledcWrite(UV_PWM_CH, 0);
-      break;
+    if (now - g_strobeLastToggleMs >= g_strobeIntervalMs)
+    {
+      g_strobeLastToggleMs = now;
+      g_strobeLampOn = !g_strobeLampOn;
+    }
 
-    case UV_LEVEL_BASE:
-      ledcWrite(UV_PWM_CH, pwmDuty12(0.40f));
-      break;
+    if (g_strobeLampOn)
+      matrixFill(255, 255, 255);
+    else
+      matrixFill(0, 0, 0);
 
-    case UV_LEVEL_BOOST:
-      ledcWrite(UV_PWM_CH, pwmDuty12(0.80f));
-      break;
+    matrixShow();
+    return;
   }
-}
-else
-{
+
+  // ---------------------------------------------------------
+  // 7.3) BIN playback + UV pattern
+  // ---------------------------------------------------------
+  // BIN ma timing po czasie absolutnym, więc jeśli ręczna lampa
+  // przez chwilę go zasłaniała, to po powrocie wskoczy w poprawne
+  // miejsce utworu/animacji.
+  if (binPlaying)
+  {
+    binUpdate();
+
+    UvLevel uvLevel = animsGetUvLevel(
+        flagOn(g_set.flags, F_UV),
+        true,
+        (uint8_t)g_theme,
+        now - g_musicStartMs);
+
+    switch (uvLevel)
+    {
+      case UV_LEVEL_OFF:
+        ledcWrite(UV_PWM_CH, 0);
+        break;
+
+      case UV_LEVEL_BASE:
+        ledcWrite(UV_PWM_CH, pwmDuty12(0.40f));
+        break;
+
+      case UV_LEVEL_BOOST:
+        ledcWrite(UV_PWM_CH, pwmDuty12(0.80f));
+        break;
+    }
+
+    return;
+  }
+
+  // ---------------------------------------------------------
+  // 7.4) Post-game ambient
+  // ---------------------------------------------------------
   if (g_state == GState::GAME_OVER)
   {
     applyPostGameLights();
+    return;
   }
-  else if (animsLampActive())
-{
-  animsTick(now);
-  ledcWrite(UV_PWM_CH, 0);
-}
-else if (g_state == GState::IDLE || g_state == GState::WAIT_PUCK_CLEAR)
-{
-  matrixFill(0, 0, 0);
-  matrixShow();
-  ledcWrite(UV_PWM_CH, 0);
-}
-else
-{
+
+  // ---------------------------------------------------------
+  // 7.5) IDLE / WAIT state
+  // ---------------------------------------------------------
+  if (g_state == GState::IDLE || g_state == GState::WAIT_PUCK_CLEAR)
+  {
+    matrixFill(0, 0, 0);
+    matrixShow();
+    ledcWrite(UV_PWM_CH, 0);
+    return;
+  }
+
+  // ---------------------------------------------------------
+  // 7.6) Normalne animacje matrycy
+  // ---------------------------------------------------------
   animsTick(now);
 
   if (flagOn(g_set.flags, F_UV))
@@ -3173,8 +3277,6 @@ else
   {
     ledcWrite(UV_PWM_CH, 0);
   }
-}
-}
 }
 
 static bool binReadExact(uint8_t *dst, size_t n)
