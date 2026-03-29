@@ -186,6 +186,17 @@ bool canInit() {
 // ====== flaga ustawień ======
 bool puckLockEnabled = true;   // domyślnie ON
 
+enum DstMode : uint8_t {
+  DST_AUTO_CHANGE = 0,
+  DST_NO_CHANGE   = 1
+};
+
+DstMode dstMode = DST_AUTO_CHANGE;
+bool dstSummerNow = false;   // czy aktualny czas w RTC jest zapisany jako letni
+int  dstLastSwitchYear  = 0;
+int  dstLastSwitchMonth = 0;
+int  dstLastSwitchDay   = 0;
+
 // ====== CAN dla puck lock ======
 #define CAN_ID_PUCKLOCK_CMD   0x330   // komendy natychmiastowe
 #define CAN_CMD_PUCKLOCK_NOW  0x40    // typ komendy
@@ -531,7 +542,8 @@ const int16_t FOOTER_H       = 16;
 // ====================== 5) Prototypy (wczesne, wymagane przez SD) ======================
 void showERROR(const char* msg);
 bool sdSaveSettings();
-
+void drawMenuList(const char* title, const char** items, uint8_t count,
+                  int selectedIdx, int checkedIdx = -1, bool drawCheckboxes = false);
 
 
 
@@ -620,6 +632,10 @@ static void kv_trim(String& s) {
 // ====================== 6) SD: Settings (key=value) ======================
 void sdLoadSettings() {
   // domyślne na wypadek braku pliku/karty
+
+    dstLastSwitchYear  = 0;
+  dstLastSwitchMonth = 0;
+  dstLastSwitchDay   = 0;
   gameTimeIdx = 1;
   goalsIdx    = 1;
   strobesOn   = true;
@@ -628,7 +644,8 @@ void sdLoadSettings() {
   uvOn        = true;
   goalIllumOn = true;
   puckLockEnabled = true; 
-
+  dstMode       = DST_AUTO_CHANGE;
+  dstSummerNow  = false;
 
   if (!g_hasSD) return; // brak karty – zostają domyślne
 
@@ -658,6 +675,11 @@ void sdLoadSettings() {
     else if (k == "uv")        uvOn         = (v.toInt() != 0);
     else if (k == "goalIllum") goalIllumOn  = (v.toInt() != 0);
     else if (k == "puckLock") puckLockEnabled = (v.toInt() != 0);
+    else if (k == "dstMode")   dstMode      = (v.toInt() == 1) ? DST_NO_CHANGE : DST_AUTO_CHANGE;
+    else if (k == "dstSummer") dstSummerNow = (v.toInt() != 0);
+        else if (k == "dstLastY")  dstLastSwitchYear  = v.toInt();
+    else if (k == "dstLastM")  dstLastSwitchMonth = v.toInt();
+    else if (k == "dstLastD")  dstLastSwitchDay   = v.toInt();
   }
   f.close();
 }
@@ -678,6 +700,11 @@ bool sdSaveSettings() {
   f.printf("uv=%d\n",        uvOn        ? 1 : 0);
   f.printf("goalIllum=%d\n", goalIllumOn ? 1 : 0);
   f.printf("puckLock=%d\n", puckLockEnabled ? 1 : 0);
+  f.printf("dstMode=%d\n",   (int)dstMode);
+  f.printf("dstSummer=%d\n", dstSummerNow ? 1 : 0);
+    f.printf("dstLastY=%d\n",  dstLastSwitchYear);
+  f.printf("dstLastM=%d\n",  dstLastSwitchMonth);
+  f.printf("dstLastD=%d\n",  dstLastSwitchDay);
   f.flush();
   f.close();
 
@@ -752,6 +779,11 @@ bool        rtcWarnNotFound = false;
 
 // Synchronizacja „zegara systemowego” z RTC (albo z czasem kompilacji)
 void rtcSyncToSystem() {
+  
+
+
+
+  
   if (rtcReady && rtcRunning) {
     sysEpochAtSync = rtc.now().unixtime();
   } else {
@@ -760,6 +792,9 @@ void rtcSyncToSystem() {
   }
   sysMsAtSync = millis();
 }
+
+
+
 
 // ====================== 8) SD: Coin log (CSV) + API liczników ======================
 bool sdLogCoinInsert(uint8_t denom, const char* reason) {
@@ -925,7 +960,9 @@ enum Screen {
   SCR_GOALILLUM,       // ON/OFF
   SCR_PUCKLOCK,  
 
-  SCR_SETDT,           // Set date & time
+  SCR_SETDT,          // Set date & time >
+  SCR_SETDT_EDIT,     // właściwa edycja daty i czasu
+  SCR_DST,            // Daylight savings >
 
   SCR_GOALCAL,         // Goal calibration >
   SCR_GOALCAL_RUN,     // ekran trwającej kalibracji
@@ -960,7 +997,8 @@ int selCoinRoot = 0;   // w podmenu Coin counter
 int selCoinLog  = 0;   // indeks globalny wybranej pozycji (0 = najnowsza)
 int coinLogTop  = 0;   // pierwszy indeks na ekranie (do przewijania)
 int selPuckLock = 0;  
-
+int selSetDt = 0;
+int selDst   = 0;
 int selGoalCal = 0;
 
 enum GoalCalMode : uint8_t {
@@ -974,6 +1012,21 @@ enum GoalCalPhase : uint8_t {
   GCAL_RUNNING   = 1,
   GCAL_DONE      = 2
 };
+
+
+
+const char* setDtItems[] = {
+  "Set date & time >",
+  "Daylight savings >"
+};
+const uint8_t setDtCount = sizeof(setDtItems) / sizeof(setDtItems[0]);
+
+const char* dstItems[] = {
+  "Auto change",
+  "No change"
+};
+const uint8_t dstCount = sizeof(dstItems) / sizeof(dstItems[0]);
+
 
 struct GoalCalState {
   bool active = false;
@@ -1082,10 +1135,11 @@ const char* settingsItems[] = {
   "Goals to win >",
   "Light effects >",
   "Puck lock >",
-  "Set date & time >",
+  "Date & time >",
   "Goal calibration >"
 };
 const uint8_t settingsCount = sizeof(settingsItems)/sizeof(settingsItems[0]);
+
 
 //Podmenu coin counter
 const char* coinRootItems[] = {
@@ -1170,12 +1224,107 @@ struct DtState {
 static inline bool isLeap(int y) {
   return ((y % 4 == 0) && (y % 100 != 0)) || (y % 400 == 0);
 }
+
 static inline int daysInMonth(int y, int m) {
   static const int d[12] = {31,28,31,30,31,30,31,31,30,31,30,31};
   if (m == 2) return d[1] + (isLeap(y) ? 1 : 0);
   return d[m - 1];
 }
 
+static int lastSundayOfMonth(int year, int month) {
+  int dim = daysInMonth(year, month);
+  DateTime dt(year, month, dim, 12, 0, 0);
+  int dow = dt.dayOfTheWeek();
+  return dim - dow;
+}
+
+static bool isEuDstLocal(int year, int month, int day, int hour) {
+  if (month < 3 || month > 10) return false;
+  if (month > 3 && month < 10) return true;
+
+  if (month == 3) {
+    int ls = lastSundayOfMonth(year, 3);
+    if (day > ls) return true;
+    if (day < ls) return false;
+    return hour >= 2;
+  }
+
+  int ls = lastSundayOfMonth(year, 10);
+  if (day < ls) return true;
+  if (day > ls) return false;
+  return hour < 3;
+}
+
+
+void dstAutoTick() {
+  static uint32_t lastCheckMs = 0;
+
+  if (dstMode != DST_AUTO_CHANGE) return;
+  if (!(rtcReady && rtcRunning)) return;
+
+  if (millis() - lastCheckMs < 200) return;   // częściej sprawdzaj
+  lastCheckMs = millis();
+
+  DateTime now = rtc.now();
+
+  const int year   = now.year();
+  const int month  = now.month();
+  const int day    = now.day();
+  const int hour   = now.hour();
+  const int minute = now.minute();
+  const int second = now.second();
+
+  bool switchedToday =
+      (dstLastSwitchYear  == year) &&
+      (dstLastSwitchMonth == month) &&
+      (dstLastSwitchDay   == day);
+
+  if (switchedToday) return;
+
+  // START czasu letniego:
+  // ostatnia niedziela marca, po wejściu w godzinę 02:00 cofki już nie ma
+  if (month == 3) {
+    int ls = lastSundayOfMonth(year, 3);
+
+    if (day == ls && hour == 2 && minute == 0) {
+      DateTime changed(now.unixtime() + 3600);
+      rtc.adjust(changed);
+      rtcRunning = true;
+      rtcSyncToSystem();
+      dstSummerNow = true;
+
+      dstLastSwitchYear  = year;
+      dstLastSwitchMonth = month;
+      dstLastSwitchDay   = day;
+
+      sdSaveSettings();
+      Serial.println("[DST] WINTER -> SUMMER (+1h)");
+      return;
+    }
+  }
+
+  // KONIEC czasu letniego:
+  // ostatnia niedziela października, po wejściu w 03:00 cofamy na 02:00
+  if (month == 10) {
+    int ls = lastSundayOfMonth(year, 10);
+
+    if (day == ls && hour == 3 && minute == 0) {
+      DateTime changed(now.unixtime() - 3600);
+      rtc.adjust(changed);
+      rtcRunning = true;
+      rtcSyncToSystem();
+      dstSummerNow = false;
+
+      dstLastSwitchYear  = year;
+      dstLastSwitchMonth = month;
+      dstLastSwitchDay   = day;
+
+      sdSaveSettings();
+      Serial.println("[DST] SUMMER -> WINTER (-1h)");
+      return;
+    }
+  }
+}
 void setdtLoadFromRTC() {
   DateTime now = (rtcReady && rtcRunning)
                  ? rtc.now()
@@ -1284,7 +1433,9 @@ void drawPuckLockMenu() {
 }
 
 
-
+void drawSetDateTimeMenu() {
+  drawMenuList("Set date & time", setDtItems, setDtCount, selSetDt);
+}
 
 void drawSetDateTime() {
   drawHeader("Set date & time");
@@ -1323,6 +1474,40 @@ void drawSetDateTime() {
   tft.drawRect(segX[dt.cursor]-2, segY[dt.cursor]-3, segW[dt.cursor]+4, LINE_H-2, ST77XX_RED);
 }
 
+
+void drawDstMenu() {
+  drawHeader("Daylight savings");
+  tft.setTextWrap(false);
+  tft.setTextSize(1);
+
+  bool rtcIsSummer = false;
+  if (rtcReady && rtcRunning) {
+    DateTime now = rtc.now();
+    rtcIsSummer = isEuDstLocal(now.year(), now.month(), now.day(), now.hour());
+  }
+
+  for (uint8_t i = 0; i < dstCount; i++) {
+    int16_t y = TOP_MARGIN + i * LINE_H;
+
+    if (i == selDst) {
+      drawVerticalGradient(0, y - 2, tft.width(), LINE_H, COLOR_SEL_BG, COLOR_BG2);
+      tft.setTextColor(COLOR_SEL_FG);
+    } else {
+      tft.setTextColor(COLOR_FG);
+    }
+
+    tft.setCursor(LEFT_MARGIN, y + SELECT_OFFSET_Y);
+    tft.print((i == (uint8_t)dstMode) ? "[x] " : "[ ] ");
+    tft.print(dstItems[i]);
+  }
+
+  tft.setTextColor(COLOR_FG);
+  tft.setCursor(LEFT_MARGIN, TOP_MARGIN + 3 * LINE_H);
+  tft.print("Current RTC:");
+
+  tft.setCursor(LEFT_MARGIN, TOP_MARGIN + 4 * LINE_H);
+  tft.print(rtcIsSummer ? "summer time" : "winter time");
+}
 
 void drawGoalCalMenu() {
   drawHeader("Goal calibration");
@@ -1589,7 +1774,7 @@ static void blitMenuBGStrip(int y, int h) {
 
 
 void drawMenuList(const char* title, const char** items, uint8_t count,
-                  int selectedIdx, int checkedIdx = -1, bool drawCheckboxes = false) {
+                  int selectedIdx, int checkedIdx, bool drawCheckboxes) {
   tft.setTextWrap(false);
 
   // nagłówek
@@ -2111,9 +2296,17 @@ void redraw() {
       drawMenuList("Goal illumination", onOffItems, onOffCount, selBin, goalIllumOn ? 0 : 1, true);
       break;
     case SCR_SETDT:
+      drawSetDateTimeMenu();
+      break;
+
+    case SCR_SETDT_EDIT:
       if (!dt.loaded)
         setdtLoadFromRTC();
       drawSetDateTime();
+      break;
+
+    case SCR_DST:
+      drawDstMenu();
       break;
 
       // kalibracja
@@ -2287,16 +2480,31 @@ void setdtNextFieldOrSave() {
   DateTime val(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
   if (rtcReady) {
     rtc.adjust(val);
-    rtcRunning = true;   // po adjust zegar „biegnie”
-    rtcSyncToSystem();   // po zapisie aktualizujemy zegar systemowy
+    delay(20);
+
+    bool lp = rtc.lostPower();
+    Serial.printf("[RTC] after manual set, lostPower=%d\n", lp ? 1 : 0);
+
+    rtcRunning = !lp;
+    rtcWarnChangeBat = false;
+
+    rtcSyncToSystem();
+    dstSummerNow = isEuDstLocal(dt.year, dt.month, dt.day, dt.hour);
+    dstLastSwitchYear  = 0;
+    dstLastSwitchMonth = 0;
+    dstLastSwitchDay   = 0;
+
     showOK("RTC updated");
     delay(800);
+
+    dt.loaded = false;   // żeby przy następnym wejściu wczytać świeży czas z RTC
+    goBack();            // wróć do "Set date & time > / Daylight savings >"
+    redraw();
   } else {
     showERROR("RTC not found");
     delay(800);
   }
 }
-
 void setdtPrevFieldOrExit() {
   if (dt.cursor > 0) {
     dt.cursor--;
@@ -2776,19 +2984,33 @@ pinMode(COIN_5_PIN, INPUT_PULLUP);
   DateTime build(F(__DATE__), F(__TIME__));
   DateTime now = (rtcReady ? rtc.now() : build);
 
-  // zapisz ostatni odczyt (Preferences)
-  
-  Preferences pr;
-  pr.begin("rtc", false);
-  uint32_t last = pr.getUInt("lastRtc", 0);
-  pr.putUInt("lastRtc", (uint32_t)now.unixtime());
-  pr.end();
 
-  // ostrzeżenia RTC
-  rtcWarnNotFound   = !rtcReady;
-  bool looksReset   = (now.unixtime() + 60 < build.unixtime());
-  bool wentBack     = last && (now.unixtime() + 60 < last);
-  rtcWarnChangeBat  = (rtcReady && (!rtcRunning || looksReset || wentBack));
+    Serial.println("=== RTC DIAG ===");
+  Serial.printf("rtcReady: %d\n", rtcReady ? 1 : 0);
+  Serial.printf("lostPower: %d\n", (rtcReady && rtc.lostPower()) ? 1 : 0);
+  Serial.printf("rtcRunning: %d\n", rtcRunning ? 1 : 0);
+
+  Serial.printf("BUILD: %04d-%02d-%02d %02d:%02d:%02d | unix=%lu\n",
+                build.year(), build.month(), build.day(),
+                build.hour(), build.minute(), build.second(),
+                (unsigned long)build.unixtime());
+
+  Serial.printf("RTC  : %04d-%02d-%02d %02d:%02d:%02d | unix=%lu\n",
+                now.year(), now.month(), now.day(),
+                now.hour(), now.minute(), now.second(),
+                (unsigned long)now.unixtime());
+
+Serial.println("================");
+
+// zapisz ostatni odczyt (Preferences)
+Preferences pr;
+pr.begin("rtc", false);
+pr.putUInt("lastRtc", (uint32_t)now.unixtime());
+pr.end();
+
+// ostrzeżenia RTC
+rtcWarnNotFound = !rtcReady;
+rtcWarnChangeBat = (rtcReady && !rtcRunning);
 
   rtcSyncToSystem();
 
@@ -2968,6 +3190,8 @@ if (!anyHeld) {
 
 
 
+
+
 // ===== SECRET COMBOS =====
 
 
@@ -3037,6 +3261,8 @@ if (pressedNow(bUp) || repeatNow(bUp)) {
     case SCR_MAIN:       selMain      = wrapPrev(selMain,      mainCount);       break;
     case SCR_PLAYROOT:   selPlayRoot  = wrapPrev(selPlayRoot,  playRootCount);   break;
     case SCR_SETTINGS:   selSettings  = wrapPrev(selSettings,  settingsCount);   break;
+    case SCR_SETDT:      selSetDt     = wrapPrev(selSetDt,     setDtCount);      break;
+
 
     // Listy gier
     case SCR_PLAY:       selPlay      = wrapPrev(selPlay,      fullGameCount);   break;
@@ -3070,7 +3296,8 @@ if (pressedNow(bUp) || repeatNow(bUp)) {
     selPuckLock = wrapPrev(selPuckLock, puckLockCount);                          break;
 
     // Ustawianie daty/czasu
-    case SCR_SETDT:      setdtApplyDelta(+1);                                    break;
+    case SCR_SETDT_EDIT: setdtApplyDelta(+1);                                    break;
+    case SCR_DST:        selDst       = wrapPrev(selDst,       dstCount);        break;
 
     // Statyczne
     case SCR_OTHER:
@@ -3121,7 +3348,8 @@ if (pressedNow(bDown) || repeatNow(bDown)) {
     case SCR_MAIN:       selMain      = wrapNext(selMain,      mainCount);       break;
     case SCR_PLAYROOT:   selPlayRoot  = wrapNext(selPlayRoot,  playRootCount);   break;
     case SCR_SETTINGS:   selSettings  = wrapNext(selSettings,  settingsCount);   break;
-
+    case SCR_SETDT:      selSetDt     = wrapNext(selSetDt,     setDtCount);      break;
+    
     // Listy gier
     case SCR_PLAY:       selPlay      = wrapNext(selPlay,      fullGameCount);   break;
     case SCR_MUSICROUND: selMusic     = wrapNext(selMusic,     musicRoundCount); break;
@@ -3150,7 +3378,8 @@ if (pressedNow(bDown) || repeatNow(bDown)) {
     case SCR_PLAYCONFIRM: selConfirm = (selConfirm + 1) % 2;                     break;
 
     // Ustawianie daty/czasu
-    case SCR_SETDT:      setdtApplyDelta(-1);                                    break;
+    case SCR_SETDT_EDIT: setdtApplyDelta(-1);   // albo +1/-1 zgodnie z tym jak masz teraz
+    case SCR_DST:        selDst       = wrapNext(selDst,       dstCount);        break;
 
     //puck lock
     case SCR_PUCKLOCK:
@@ -3232,7 +3461,7 @@ if (pressedNow(bSelect)) {
       else if (selSettings == 1) { enterScreen(SCR_GOALS);     selGoals = goalsIdx; }
       else if (selSettings == 2) { enterScreen(SCR_LIGHTS); }
       else if (selSettings == 3) { enterScreen(SCR_PUCKLOCK);  selPuckLock = puckLockEnabled ? 0 : 1; }
-      else if (selSettings == 4) { enterScreen(SCR_SETDT); }
+      else if (selSettings == 4) { selSetDt = 0; enterScreen(SCR_SETDT); }
       else if (selSettings == 5) { enterScreen(SCR_GOALCAL);   selGoalCal = 0; }
       need = true; break;
     
@@ -3369,8 +3598,31 @@ case SCR_GOALCAL_RUN:
       need = true; break;
 
     case SCR_SETDT:
+      if (selSetDt == 0) {
+        dt.loaded = false;
+        enterScreen(SCR_SETDT_EDIT);
+      } else if (selSetDt == 1) {
+        selDst = (int)dstMode;
+        enterScreen(SCR_DST);
+      }
+      need = true; break;
+
+    case SCR_SETDT_EDIT:
       setdtNextFieldOrSave();
       need = true; break;
+
+case SCR_DST:
+  dstMode = (selDst == 0) ? DST_AUTO_CHANGE : DST_NO_CHANGE;
+
+  if (dstMode == DST_AUTO_CHANGE && rtcReady && rtcRunning) {
+    DateTime now = rtc.now();
+    dstSummerNow = isEuDstLocal(now.year(), now.month(), now.day(), now.hour());
+  }
+
+  saveSettings();
+  showOK(dstMode == DST_AUTO_CHANGE ? "DST auto" : "DST no change");
+  delay(700);
+  need = true; break;
 
     case SCR_OTHER:
     case SCR_COINS:
@@ -3395,7 +3647,7 @@ case SCR_GOALCAL_RUN:
 if (pressedNow(bBack)) {
   registerInputActivity();
 
-  if (current == SCR_SETDT) {
+  if (current == SCR_SETDT_EDIT) {
     setdtPrevFieldOrExit();
     need = true;
   }
@@ -3435,6 +3687,8 @@ if (wantsFooter)
 {
   drawFooterClock(false);
 }
+
+dstAutoTick();
 
 // Marquee tick tylko na ekranie loga
 // --- Marquee tick tylko na ekranie loga ---
