@@ -2492,6 +2492,16 @@
 			(embedded_fonts no)
 		)
 	)
+	(text "PWM_FAN NET NEEDS TO BE CONECTED TO FANS' GROUNDS. \nIT IS OPERATED VIA GDN PWM, NOT THE PWM PIN IN THE FANS. \nONLY 2 WIRES IN FANS ARE NEEDED! +12 AND GND. \n\nIT IS NOT A STANDARD CONNECTION, PLEASE MAKE SURE BEFORE PLUGGING IN A NEW FAN"
+		(exclude_from_sim no)
+		(at 192.786 74.168 0)
+		(effects
+			(font
+				(size 1.27 1.27)
+			)
+		)
+		(uuid "10486e57-0280-47d2-b678-c946f5936f76")
+	)
 	(junction
 		(at 127 87.63)
 		(diameter 0)
@@ -2509,12 +2519,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "6bcaba54-cc51-4a18-bb24-8f91af6da7cf")
-	)
-	(junction
-		(at 55.88 16.51)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "7449e427-a3c8-4343-a290-f7ccc35bf1ea")
 	)
 	(junction
 		(at 24.13 46.99)
@@ -2557,12 +2561,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "b2b9363b-ad69-4f27-8341-a8e2d00b9997")
-	)
-	(junction
-		(at 99.06 16.51)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "d989316e-6b36-4c25-bf1b-c7d304776685")
 	)
 	(junction
 		(at 24.13 41.91)
@@ -2672,6 +2670,16 @@
 	)
 	(wire
 		(pts
+			(xy 83.82 44.45) (xy 83.82 43.18)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1752069d-93ce-4dba-a4a6-6f9bdbe98a42")
+	)
+	(wire
+		(pts
 			(xy 124.46 87.63) (xy 127 87.63)
 		)
 		(stroke
@@ -2682,7 +2690,7 @@
 	)
 	(wire
 		(pts
-			(xy 99.06 12.7) (xy 99.06 16.51)
+			(xy 99.06 12.7) (xy 99.06 33.02)
 		)
 		(stroke
 			(width 0)
@@ -2772,16 +2780,6 @@
 	)
 	(wire
 		(pts
-			(xy 81.28 16.51) (xy 99.06 16.51)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "54e58260-829e-43e8-821d-246e92a95320")
-	)
-	(wire
-		(pts
 			(xy 128.27 45.72) (xy 128.27 43.18)
 		)
 		(stroke
@@ -2829,6 +2827,16 @@
 			(type default)
 		)
 		(uuid "66753212-4236-44ca-afe0-a859e2fa6aef")
+	)
+	(wire
+		(pts
+			(xy 67.31 41.91) (xy 67.31 36.83)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "6b541818-5be3-4321-9b1c-e460b8d52c2d")
 	)
 	(wire
 		(pts
@@ -2899,16 +2907,6 @@
 			(type default)
 		)
 		(uuid "83e8c3f5-16ec-46c1-80ef-f3bdaf213e5f")
-	)
-	(wire
-		(pts
-			(xy 55.88 16.51) (xy 76.2 16.51)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "85570ac6-ab56-4c51-8164-69c676887ba2")
 	)
 	(wire
 		(pts
@@ -3042,16 +3040,6 @@
 	)
 	(wire
 		(pts
-			(xy 99.06 16.51) (xy 99.06 33.02)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "b1f5731d-c52f-4e01-8885-0bfc9fdb8da7")
-	)
-	(wire
-		(pts
 			(xy 105.41 38.1) (xy 105.41 36.83)
 		)
 		(stroke
@@ -3152,6 +3140,16 @@
 	)
 	(wire
 		(pts
+			(xy 78.74 44.45) (xy 83.82 44.45)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "cfeda983-d42b-44f6-85ed-1b940ad72bbb")
+	)
+	(wire
+		(pts
 			(xy 92.71 95.25) (xy 127 95.25)
 		)
 		(stroke
@@ -3169,16 +3167,6 @@
 			(type default)
 		)
 		(uuid "d4fe0b72-c30d-4431-a0c5-9e68b2b0f554")
-	)
-	(wire
-		(pts
-			(xy 83.82 45.72) (xy 83.82 43.18)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "d952a9cd-efa7-41be-b993-d960cdd6290c")
 	)
 	(wire
 		(pts
@@ -3350,7 +3338,7 @@
 	)
 	(global_label "pwm_fan"
 		(shape input)
-		(at 83.82 45.72 270)
+		(at 78.74 44.45 270)
 		(fields_autoplaced yes)
 		(effects
 			(font
@@ -3360,7 +3348,7 @@
 		)
 		(uuid "851b65c0-1dbb-4b05-9867-060e8c30ad77")
 		(property "Intersheetrefs" "${INTERSHEET_REFS}"
-			(at 83.82 56.8693 90)
+			(at 78.74 55.5993 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -5772,7 +5760,6 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(fields_autoplaced yes)
 		(uuid "98043a36-8162-4b98-befb-8dacc41b3cd7")
 		(property "Reference" "R4"
 			(at 86.36 39.3699 0)
@@ -5784,7 +5771,7 @@
 			)
 		)
 		(property "Value" "33R"
-			(at 86.36 41.9099 0)
+			(at 89.154 47.498 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6404,7 +6391,7 @@
 	)
 	(symbol
 		(lib_id "power:+12V")
-		(at 67.31 36.83 180)
+		(at 67.31 41.91 180)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -6413,7 +6400,7 @@
 		(fields_autoplaced yes)
 		(uuid "c72e8111-bf6b-4f25-bedc-396c727ecef1")
 		(property "Reference" "#PWR010"
-			(at 67.31 33.02 0)
+			(at 67.31 38.1 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6422,7 +6409,7 @@
 			)
 		)
 		(property "Value" "+12V"
-			(at 67.31 41.91 0)
+			(at 67.31 46.99 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6430,7 +6417,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 67.31 36.83 0)
+			(at 67.31 41.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6439,7 +6426,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 67.31 36.83 0)
+			(at 67.31 41.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6448,7 +6435,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"+12V\""
-			(at 67.31 36.83 0)
+			(at 67.31 41.91 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -6596,74 +6583,6 @@
 			(project "lamp-driver"
 				(path "/8d1b4815-1b67-41e7-a6f2-54ca5c4f4dfa"
 					(reference "#PWR011")
-					(unit 1)
-				)
-			)
-		)
-	)
-	(symbol
-		(lib_id "Device:R_Small")
-		(at 78.74 16.51 270)
-		(unit 1)
-		(exclude_from_sim no)
-		(in_bom yes)
-		(on_board yes)
-		(dnp no)
-		(fields_autoplaced yes)
-		(uuid "d5571912-5e0d-4648-9a90-9947371605a8")
-		(property "Reference" "R3"
-			(at 78.74 11.43 90)
-			(effects
-				(font
-					(size 1.016 1.016)
-				)
-			)
-		)
-		(property "Value" "10K"
-			(at 78.74 13.97 90)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-			)
-		)
-		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
-			(at 78.74 16.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Datasheet" "~"
-			(at 78.74 16.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(property "Description" "Resistor, small symbol"
-			(at 78.74 16.51 0)
-			(effects
-				(font
-					(size 1.27 1.27)
-				)
-				(hide yes)
-			)
-		)
-		(pin "2"
-			(uuid "9680c2dd-e73c-447a-bfe9-a8dadfc4a974")
-		)
-		(pin "1"
-			(uuid "81f42244-f31c-442e-9572-545197cadbd1")
-		)
-		(instances
-			(project "lamp-driver"
-				(path "/8d1b4815-1b67-41e7-a6f2-54ca5c4f4dfa"
-					(reference "R3")
 					(unit 1)
 				)
 			)

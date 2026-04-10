@@ -124,6 +124,64 @@ static inline uint32_t pwmDuty12(float duty)
   return (uint32_t)(duty * ((1u << UV_PWM_RES) - 1) + 0.5f);
 }
 
+
+// FAN PWM on GPIO2
+#define PIN_FAN_PWM 2
+#define FAN_PWM_CH   1
+#define FAN_PWM_HZ 15000
+#define FAN_PWM_RES  8
+
+static uint8_t g_fanPercent = 0;
+
+static inline uint32_t fanDutyFromPercent(uint8_t pct)
+{
+  if (pct > 100) pct = 100;
+
+  const uint32_t maxDuty = (1u << FAN_PWM_RES) - 1;
+  return (uint32_t)(maxDuty * pct / 100u);
+}
+static void fanSetPercent(uint8_t pct)
+{
+  if (pct > 100) pct = 100;
+
+  if (pct > 0 && pct < 30)
+    pct = 30;
+
+  g_fanPercent = pct;
+
+  ledcWrite(FAN_PWM_CH, fanDutyFromPercent(pct));
+  Serial.printf("[FAN] %u%%\n", g_fanPercent);
+}
+
+static uint8_t g_fanGamePercent = 60;     // domyślnie dla gry i ręcznej lampy
+static uint8_t g_fanAmbientPercent = 30;  // po grze w ambient
+
+static bool g_postGameAmbientFanActive = false;
+
+static bool g_manualLampActive = false;
+static uint32_t g_manualLampUntilMs = 0;
+
+
+
+static bool isManualLampActive()
+{
+  if (!g_manualLampActive)
+    return false;
+
+  if (g_manualLampUntilMs != 0 && millis() >= g_manualLampUntilMs)
+  {
+    g_manualLampActive = false;
+    g_manualLampUntilMs = 0;
+    Serial.println("[FAN] manual lamp expired");
+    return false;
+  }
+
+  return true;
+}
+
+
+
+
 // BUSY DF
 #define DF_BUSY_PIN 38
 
@@ -1222,6 +1280,36 @@ static inline void remainLogTick()
   }
 }
 
+static inline bool isGameActive()
+{
+  return
+      (g_state == GState::PREPARE) ||
+      (g_state == GState::COUNTDOWN) ||
+      (g_state == GState::ROUND_NORMAL) ||
+      (g_state == GState::ROUND_MUSIC);
+}
+
+static void fanAutoUpdate()
+{
+  uint8_t target = 0;
+
+  if (isGameActive() || isManualLampActive())
+  {
+    target = g_fanGamePercent;
+  }
+  else if (g_postGameAmbientFanActive)
+  {
+    target = g_fanAmbientPercent;
+  }
+  else
+  {
+    target = 0;
+  }
+
+  if (target != g_fanPercent)
+    fanSetPercent(target);
+}
+
 static void musicAutoAdvanceTick()
 {
   static bool wasPlaying = false;
@@ -1317,6 +1405,7 @@ static void puckLockAutoReset();
 static void startNormalRound()
 {
   blowerSet(true);
+  g_postGameAmbientFanActive = false;
   g_musicRound = false;
   g_roundNo++;
   if (g_roundNo > 3)
@@ -1369,7 +1458,7 @@ void binUpdate();
 static void startMusicRound()
 {
   blowerSet(true);
-
+  g_postGameAmbientFanActive = false;
   g_musicRound = true;
   g_roundNo = 3;
   roundResetScore();
@@ -1729,6 +1818,11 @@ static uint8_t parseHexByte(const char *s, bool *ok)
 
 static void hardResetToIdle()
 {
+
+  g_postGameAmbientFanActive = false;
+  g_manualLampActive = false;
+  g_manualLampUntilMs = 0;
+  fanSetPercent(0);
   musicStop();
   blowerSet(false);
   puckLockAutoReset();
@@ -1756,6 +1850,7 @@ static void serialHelp()
   Serial.println("start music                            (debug: od razu muzyczna)");
   Serial.println("goal a|b                               (wstrzyknij gola bez czujnika)");
   Serial.println("blower on|off");
+  Serial.println("fan <0..100>|on|off");
   Serial.println("lock a|b|ab");
   Serial.println("unlock a|b|ab");
   Serial.println("mp3 stop");
@@ -1973,6 +2068,30 @@ if (hz <= 0)
       Serial.println("[SER] blower on|off");
     return;
   }
+
+// ---- fan ------
+if (!strcasecmp(tok[0], "fan") && n >= 2)
+{
+  if (!strcasecmp(tok[1], "on"))
+  {
+    fanSetPercent(100);
+    return;
+  }
+
+  if (!strcasecmp(tok[1], "off"))
+  {
+    fanSetPercent(0);
+    return;
+  }
+
+  int pct = atoi(tok[1]);
+  if (pct < 0) pct = 0;
+  if (pct > 100) pct = 100;
+
+  fanSetPercent((uint8_t)pct);
+  return;
+}
+
 
   // ---- Puck lock ----
   if ((!strcasecmp(tok[0], "lock") || !strcasecmp(tok[0], "unlock")) && n >= 2)
@@ -2392,7 +2511,11 @@ static void enterGameOver()
   animsSetBreathing(false);
   animsSetMode(ANIM_OFF);
 
-applyPostGameLights();
+  g_postGameActive = true;
+  g_postGameStartMs = millis();
+
+  applyPostGameLights();
+  g_postGameAmbientFanActive = true;
 
   g_state = GState::GAME_OVER;
   g_gameOverT0 = millis();
@@ -2400,7 +2523,6 @@ applyPostGameLights();
 
   musicPlayFolderFile(6, 11);
 }
-
 
 static void debugScanPixels()
 {
@@ -2534,6 +2656,7 @@ showPurpleWithCorners(0);
 
   // 10 minut ambientu po starcie
   g_postGameActive = true;
+  
   g_postGameStartMs = millis();
 }
 
@@ -2575,6 +2698,12 @@ void setup()
 ledcAttachPin(PIN_UV_DIM, UV_PWM_CH);
 ledcWrite(UV_PWM_CH, 0);   // startowo zgaszone
 g_uvCur = false;
+
+ledcSetup(FAN_PWM_CH, FAN_PWM_HZ, FAN_PWM_RES);
+ledcAttachPin(PIN_FAN_PWM, FAN_PWM_CH);
+ledcWrite(FAN_PWM_CH, 0);   // startowo OFF
+g_fanPercent = 0;
+
 
   File f = SD.open(TOAD_PATH, FILE_READ);
   if (!f)
@@ -2680,6 +2809,7 @@ void loop()
       matrixShow();
 
       g_postGameActive = false;
+      g_postGameAmbientFanActive = false;
       Serial.println("[POST GAME] timeout -> all OFF");
     }
   }
@@ -2925,11 +3055,22 @@ void loop()
       if (mode == LMODE_OFF)
       {
         animsLampOff();
+        g_manualLampActive = false;
+        g_manualLampUntilMs = 0;
         Serial.println("[LAMP] OFF");
       }
       else
       {
         animsLampSet(mode, value, duration);
+
+        g_manualLampActive = true;
+
+        uint32_t durMs = lampDurationToMs(duration);
+        if (durMs > 0)
+          g_manualLampUntilMs = millis() + durMs;
+        else
+          g_manualLampUntilMs = 0; // 0 = bez auto-timeoutu po stronie main
+
         Serial.printf("[LAMP] mode=%u value=%u duration=%u\n",
                       mode, value, duration);
       }
@@ -3144,6 +3285,7 @@ void loop()
   // =========================================================
   puckTick();
   remainLogTick();
+  fanAutoUpdate();
 
   // =========================================================
   // 6) CAN AUTO-RECOVERY
@@ -3247,16 +3389,14 @@ void loop()
   // ---------------------------------------------------------
   // 7.4) Post-game ambient
   // ---------------------------------------------------------
-  if (g_state == GState::GAME_OVER)
-  {
-    applyPostGameLights();
-    return;
-  }
+if (g_postGameActive &&
+    (g_state == GState::GAME_OVER || g_state == GState::WAIT_PUCK_CLEAR))
+{
+  applyPostGameLights();
+  return;
+}
 
-  // ---------------------------------------------------------
-  // 7.5) IDLE / WAIT state
-  // ---------------------------------------------------------
-  if (g_state == GState::IDLE || g_state == GState::WAIT_PUCK_CLEAR)
+  if (g_state == GState::IDLE)
   {
     matrixFill(0, 0, 0);
     matrixShow();

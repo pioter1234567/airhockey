@@ -52,6 +52,17 @@ static bool isInWindow(uint32_t t, const TimeWindow* w, size_t n)
 
 
 
+// ===== TEENSIES =====
+static const TimeWindow UV_Teensies_OFF[] = {
+    // TODO
+};
+
+static const TimeWindow UV_Teensies_BOOST[] = {
+    // TODO
+};
+
+
+// ===== TOAD =====
 static const TimeWindow UV_ToadStory_OFF[] = {
     {  5150,   5200 },
     {  5800,   6100 },
@@ -81,7 +92,7 @@ static const TimeWindow UV_ToadStory_OFF[] = {
 static const TimeWindow UV_ToadStory_BOOST[] = {
     {  6700,   6800 },
     {  7050,   7150 },
-    { 12350,  12550 },  
+    { 12350,  12550 },
     { 18700,  19200 },
     { 28650,  28950 },
     { 29050,  29250 },
@@ -108,14 +119,99 @@ static const TimeWindow UV_ToadStory_BOOST[] = {
 };
 
 
+// ===== FIESTA =====
+static const TimeWindow UV_Fiesta_OFF[] = {
+    // TODO
+};
+
+static const TimeWindow UV_Fiesta_BOOST[] = {
+    // TODO
+};
+
+
+// ===== 20000 LUMS =====
+static const TimeWindow UV_Lums_OFF[] = {
+    // TODO
+};
+
+static const TimeWindow UV_Lums_BOOST[] = {
+    // TODO
+};
+
+
+// ===== OLYMPUS =====
+static const TimeWindow UV_Olympus_OFF[] = {
+    // TODO
+};
+
+static const TimeWindow UV_Olympus_BOOST[] = {
+    // TODO
+};
+
+
+// ===== GRANNIES =====
+static const TimeWindow UV_Grannies_OFF[] = {
+    { 35800, 36050 },
+    { 36350, 36700 },
+    { 37000, 37400 },
+    { 46700, 49200 },
+    { 58400, 59950 },
+    { 89550, 91600 },
+};
+
+static const TimeWindow UV_Grannies_BOOST[] = {
+    { 33400, 33600 },
+    { 34050, 34250 },
+    { 36050, 36350 },
+    { 36700, 37000 },
+    { 38650, 38850 },
+    { 39300, 39500 },
+    { 46400, 46700 },
+};
+
 static const UvPattern UV_PATTERNS[] = {
-    { nullptr, 0, nullptr, 0 }, // 0
+    {
+      UV_Teensies_OFF,
+      sizeof(UV_Teensies_OFF) / sizeof(TimeWindow),
+      UV_Teensies_BOOST,
+      sizeof(UV_Teensies_BOOST) / sizeof(TimeWindow)
+    }, // 0 = teensies
+
     {
       UV_ToadStory_OFF,
       sizeof(UV_ToadStory_OFF) / sizeof(TimeWindow),
       UV_ToadStory_BOOST,
       sizeof(UV_ToadStory_BOOST) / sizeof(TimeWindow)
     }, // 1 = toad
+
+    {
+      UV_Fiesta_OFF,
+      sizeof(UV_Fiesta_OFF) / sizeof(TimeWindow),
+      UV_Fiesta_BOOST,
+      sizeof(UV_Fiesta_BOOST) / sizeof(TimeWindow)
+    }, // 2 = fiesta
+
+    {
+      UV_Lums_OFF,
+      sizeof(UV_Lums_OFF) / sizeof(TimeWindow),
+      UV_Lums_BOOST,
+      sizeof(UV_Lums_BOOST) / sizeof(TimeWindow)
+    }, // 3 = 20000lums
+
+    {
+      UV_Olympus_OFF,
+      sizeof(UV_Olympus_OFF) / sizeof(TimeWindow),
+      UV_Olympus_BOOST,
+      sizeof(UV_Olympus_BOOST) / sizeof(TimeWindow)
+    }, // 4 = olympus
+
+    {
+      UV_Grannies_OFF,
+      sizeof(UV_Grannies_OFF) / sizeof(TimeWindow),
+      UV_Grannies_BOOST,
+      sizeof(UV_Grannies_BOOST) / sizeof(TimeWindow)
+    }, // 5 = grannies
+
 };
 
 
