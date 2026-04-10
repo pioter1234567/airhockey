@@ -96,7 +96,7 @@ static const uint32_t GAMEOVER_BLOWER_TIMEOUT_MS = 180000; // 3 min
 // uv ambiente
 static bool g_postGameActive = false;
 static uint32_t g_postGameStartMs = 0;
-static const uint32_t POST_GAME_DURATION_MS = 600000; // 10 min
+static const uint32_t POST_GAME_DURATION_MS = 600000 ; // 10 min
 
 
 // ==================== PUCKLOCK (TB6612/TB505A1) ====================
@@ -106,7 +106,7 @@ static const uint32_t POST_GAME_DURATION_MS = 600000; // 10 min
 #define PIN_AIN1 7
 #define PIN_AIN2 8
 #define PIN_BIN1 9
-#define PIN_BIN2 10
+#define PIN_BIN2 10 //test
 
 
 // UV (LDD-500H DIM on GPIO14)
