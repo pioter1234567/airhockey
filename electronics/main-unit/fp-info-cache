@@ -1,4 +1,4 @@
-26781435775737247
+26793862019045811
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -106372,6 +106372,13 @@ BAT_BU1632SM-JJ-GTR
 2
 2
 moja
+CP_7343-tantal
+Tantalum Capacitor SMD Kemet-W (7343-15 Metric), IPC-7352 nominal, (Body size from: http://www.kemet.com/Lists/ProductCatalog/Attachments/253/KEM_TC101_STD.pdf), generated with kicad-footprint-generator
+capacitor tantalum
+0
+2
+2
+moja
 CUI_MSD-4-A
 
 
@@ -106393,6 +106400,13 @@ DS3231SN
 16
 16
 moja
+FIL_ACM2012-900-2P-T001
+
+
+0
+4
+4
+moja
 FUSE_1808
 
 
@@ -106406,6 +106420,13 @@ IC_BT136S-600E_118
 0
 3
 3
+moja
+LDD-700H
+LDD-700H
+Power Supply
+0
+9
+9
 moja
 MCP1826S-5002EDB
 
@@ -106428,6 +106449,13 @@ SOIC127P599X175-8N
 8
 8
 moja
+SOT23-3
+
+
+0
+3
+3
+moja
 TFT 1.8 No card No touch
 Adafruit SSD1306 OLED 1.3 inch 128x64 I2C & SPI https://learn.adafruit.com/monochrome-oled-breakouts/downloads
 Adafruit SSD1306 OLED 1.3 inch 128x64 I2C & SPI 
@@ -106441,3 +106469,24 @@ XCVR_ESP32-WROVER-I
 0
 39
 39
+moja
+ferrit_0805
+
+
+0
+2
+2
+moja
+pus
+
+
+0
+7
+7
+moja
+switch tacticle 3_4_2 smd
+
+
+0
+2
+2

@@ -5374,6 +5374,355 @@
 			)
 			(embedded_fonts no)
 		)
+		(symbol "moja:ACM2012-900-2P-T001"
+			(pin_names
+				(offset 1.016)
+			)
+			(exclude_from_sim no)
+			(in_bom yes)
+			(on_board yes)
+			(property "Reference" "FL"
+				(at -5.0972 5.0972 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left bottom)
+				)
+			)
+			(property "Value" "ACM2012-900-2P-T001"
+				(at -5.0865 -7.6297 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify left bottom)
+				)
+			)
+			(property "Footprint" "ACM2012-900-2P-T001:FIL_ACM2012-900-2P-T001"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "Datasheet" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "Description" ""
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(hide yes)
+				)
+			)
+			(property "MF" "TDK"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "Description_1" "ACM Series 0805 50 V 90 O 0.4 A 0.19 O DCR SMT Automotive Common Mode Filter"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "Package" "Horizontal-4 TDK"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "Price" "None"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "Check_prices" "https://www.snapeda.com/parts/ACM2012-900-2P-T001/TDK/view-part/?ref=eda"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "SnapEDA_Link" "https://www.snapeda.com/parts/ACM2012-900-2P-T001/TDK/view-part/?ref=snap"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "MP" "ACM2012-900-2P-T001"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "Purchase-URL" "https://www.snapeda.com/api/url_track_click_mouser/?unipart_id=263296&manufacturer=TDK&part_name=ACM2012-900-2P-T001&search_term=None"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "Availability" "In Stock"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(property "MANUFACTURER" "TDK"
+				(at 0 0 0)
+				(effects
+					(font
+						(size 1.27 1.27)
+					)
+					(justify bottom)
+					(hide yes)
+				)
+			)
+			(symbol "ACM2012-900-2P-T001_0_0"
+				(arc
+					(start -2.54 2.54)
+					(mid -1.9018 3.1147)
+					(end -1.27 2.54)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start -1.27 -2.54)
+					(mid -1.9082 -3.1147)
+					(end -2.54 -2.54)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start -1.27 2.54)
+					(mid -0.6318 3.1147)
+					(end 0 2.54)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start 0 -2.54)
+					(mid -0.6382 -3.1147)
+					(end -1.27 -2.54)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start 0 2.54)
+					(mid 0.6382 3.1147)
+					(end 1.27 2.54)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start 1.27 -2.54)
+					(mid 0.6318 -3.1147)
+					(end 0 -2.54)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start 1.27 2.54)
+					(mid 1.9082 3.1147)
+					(end 2.54 2.54)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(arc
+					(start 2.54 -2.54)
+					(mid 1.9018 -3.1147)
+					(end 1.27 -2.54)
+					(stroke
+						(width 0.1524)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 2.54 0.508) (xy -2.54 0.508)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(polyline
+					(pts
+						(xy 2.54 -0.508) (xy -2.54 -0.508)
+					)
+					(stroke
+						(width 0.254)
+						(type default)
+					)
+					(fill
+						(type none)
+					)
+				)
+				(pin passive line
+					(at -5.08 2.54 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "1"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at -5.08 -2.54 0)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "2"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 5.08 2.54 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "4"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+				(pin passive line
+					(at 5.08 -2.54 180)
+					(length 2.54)
+					(name "~"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+					(number "3"
+						(effects
+							(font
+								(size 1.016 1.016)
+							)
+						)
+					)
+				)
+			)
+			(embedded_fonts no)
+		)
 		(symbol "moja:DFR0299"
 			(pin_names
 				(offset 1.016)
@@ -7528,6 +7877,12 @@
 		(uuid "56203a16-4bea-4513-a3f4-e174c1a1014d")
 	)
 	(junction
+		(at 210.82 58.42)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "5c944064-71a3-4956-8753-09d9262c33fd")
+	)
+	(junction
 		(at 195.58 22.86)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -7636,6 +7991,12 @@
 		(uuid "80d0c499-14c0-451c-aee6-822c16594cf0")
 	)
 	(junction
+		(at 173.99 163.83)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "8123c1af-34a5-4296-a2d5-378acaa56135")
+	)
+	(junction
 		(at 246.38 87.63)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -7646,12 +8007,6 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "884efd8a-39a3-4c84-9d8d-88b523a161c0")
-	)
-	(junction
-		(at 189.23 59.69)
-		(diameter 0)
-		(color 0 0 0 0)
-		(uuid "8a2dd734-29d2-45f0-b79e-a57fa7736631")
 	)
 	(junction
 		(at 280.67 130.81)
@@ -8219,6 +8574,16 @@
 	)
 	(wire
 		(pts
+			(xy 199.39 57.15) (xy 215.9 57.15)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "0e98acb5-e75e-4325-b578-acf17fbb734f")
+	)
+	(wire
+		(pts
 			(xy 100.33 152.4) (xy 114.3 152.4)
 		)
 		(stroke
@@ -8639,16 +9004,6 @@
 	)
 	(wire
 		(pts
-			(xy 189.23 59.69) (xy 205.74 59.69)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "2c2a73f7-29f7-46aa-81cd-3920c155c01f")
-	)
-	(wire
-		(pts
 			(xy 193.04 140.97) (xy 193.04 175.26)
 		)
 		(stroke
@@ -8819,7 +9174,7 @@
 	)
 	(wire
 		(pts
-			(xy 205.74 58.42) (xy 205.74 59.69)
+			(xy 205.74 58.42) (xy 205.74 63.5)
 		)
 		(stroke
 			(width 0)
@@ -8856,6 +9211,16 @@
 			(type default)
 		)
 		(uuid "3bd7f3f4-9564-4e0b-b5c7-650188c4ccc2")
+	)
+	(wire
+		(pts
+			(xy 207.01 64.77) (xy 220.98 64.77)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3ca092e6-97b0-4f1c-b6c7-d91c5b1d7826")
 	)
 	(wire
 		(pts
@@ -8916,16 +9281,6 @@
 			(type default)
 		)
 		(uuid "3f750d92-7183-4dd3-a4cd-8cade251820c")
-	)
-	(wire
-		(pts
-			(xy 215.9 59.69) (xy 220.98 59.69)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "3fe90e0a-8da9-403d-9a38-4ceaa1c73240")
 	)
 	(wire
 		(pts
@@ -9099,7 +9454,7 @@
 	)
 	(wire
 		(pts
-			(xy 185.42 77.47) (xy 185.42 59.69)
+			(xy 185.42 77.47) (xy 185.42 63.5)
 		)
 		(stroke
 			(width 0)
@@ -9129,6 +9484,16 @@
 	)
 	(wire
 		(pts
+			(xy 212.09 59.69) (xy 212.09 58.42)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4b2a6c18-3edb-44fa-adff-d287b15bde29")
+	)
+	(wire
+		(pts
 			(xy 146.05 63.5) (xy 138.43 63.5)
 		)
 		(stroke
@@ -9136,6 +9501,16 @@
 			(type default)
 		)
 		(uuid "4b59593c-fbc3-4511-932c-a08daf330da2")
+	)
+	(wire
+		(pts
+			(xy 220.98 59.69) (xy 212.09 59.69)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4b6df29d-243b-4494-9058-d48bbbf78919")
 	)
 	(wire
 		(pts
@@ -9359,7 +9734,7 @@
 	)
 	(wire
 		(pts
-			(xy 220.98 67.31) (xy 209.55 67.31)
+			(xy 220.98 67.31) (xy 203.2 67.31)
 		)
 		(stroke
 			(width 0)
@@ -9476,6 +9851,16 @@
 			(type default)
 		)
 		(uuid "5f9b87f0-1ae5-473b-be84-f0e6fcb65efd")
+	)
+	(wire
+		(pts
+			(xy 212.09 58.42) (xy 210.82 58.42)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "5fc6b9bf-3b8b-420a-9eec-2e1a2a6a012f")
 	)
 	(wire
 		(pts
@@ -9609,7 +9994,7 @@
 	)
 	(wire
 		(pts
-			(xy 185.42 59.69) (xy 189.23 59.69)
+			(xy 185.42 63.5) (xy 189.23 63.5)
 		)
 		(stroke
 			(width 0)
@@ -10139,6 +10524,16 @@
 	)
 	(wire
 		(pts
+			(xy 207.01 71.12) (xy 207.01 64.77)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8a312e4e-763e-4558-af90-fafa4774a63b")
+	)
+	(wire
+		(pts
 			(xy 195.58 22.86) (xy 209.55 22.86)
 		)
 		(stroke
@@ -10236,6 +10631,16 @@
 			(type default)
 		)
 		(uuid "949f7e13-d510-4ce1-a9a1-373064dd1162")
+	)
+	(wire
+		(pts
+			(xy 199.39 62.23) (xy 199.39 63.5)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "95a88cb4-cd81-4e7b-8cf0-f312f56ff245")
 	)
 	(wire
 		(pts
@@ -10406,16 +10811,6 @@
 			(type default)
 		)
 		(uuid "a3b6449a-b1a9-4e86-b071-1523fb4517d5")
-	)
-	(wire
-		(pts
-			(xy 215.9 59.69) (xy 215.9 60.96)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "a411ee85-9348-4c4e-b4f5-49ccb45196ed")
 	)
 	(wire
 		(pts
@@ -10619,16 +11014,6 @@
 	)
 	(wire
 		(pts
-			(xy 189.23 58.42) (xy 189.23 59.69)
-		)
-		(stroke
-			(width 0)
-			(type default)
-		)
-		(uuid "af2c3a7f-29cd-49ca-b063-5f16e562b6ad")
-	)
-	(wire
-		(pts
 			(xy 195.58 34.29) (xy 195.58 40.64)
 		)
 		(stroke
@@ -10636,6 +11021,16 @@
 			(type default)
 		)
 		(uuid "af723ab1-b2ed-4cc8-ae5a-a59559852f7f")
+	)
+	(wire
+		(pts
+			(xy 189.23 62.23) (xy 189.23 63.5)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "af9e388e-2b8b-4ba5-8bc6-bef76f4f634f")
 	)
 	(wire
 		(pts
@@ -11139,6 +11534,16 @@
 	)
 	(wire
 		(pts
+			(xy 199.39 63.5) (xy 205.74 63.5)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d7ac20c6-e239-4fea-9278-f0dc70b7c1fe")
+	)
+	(wire
+		(pts
 			(xy 270.51 116.84) (xy 278.13 116.84)
 		)
 		(stroke
@@ -11429,7 +11834,7 @@
 	)
 	(wire
 		(pts
-			(xy 175.26 57.15) (xy 215.9 57.15)
+			(xy 175.26 57.15) (xy 189.23 57.15)
 		)
 		(stroke
 			(width 0)
@@ -11649,7 +12054,7 @@
 	)
 	(wire
 		(pts
-			(xy 220.98 64.77) (xy 209.55 64.77)
+			(xy 207.01 71.12) (xy 200.66 71.12)
 		)
 		(stroke
 			(width 0)
@@ -13131,7 +13536,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 209.55 67.31 270)
+		(at 203.2 67.31 270)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -13140,7 +13545,7 @@
 		(fields_autoplaced yes)
 		(uuid "17de8980-f7d1-4dac-ba82-d06539da6774")
 		(property "Reference" "#PWR047"
-			(at 203.2 67.31 0)
+			(at 196.85 67.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13149,7 +13554,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 205.74 67.3099 90)
+			(at 199.39 67.3099 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13158,7 +13563,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 209.55 67.31 0)
+			(at 203.2 67.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13167,7 +13572,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 209.55 67.31 0)
+			(at 203.2 67.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13176,7 +13581,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 209.55 67.31 0)
+			(at 203.2 67.31 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -13726,6 +14131,181 @@
 			(project "rayman_main"
 				(path "/fbce0b23-6767-4811-9332-0d8ff8d8a2ae"
 					(reference "#PWR023")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "moja:ACM2012-900-2P-T001")
+		(at 194.31 59.69 0)
+		(mirror y)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "2692f37a-0449-49a2-8e17-67798be25213")
+		(property "Reference" "FL1"
+			(at 194.31 67.31 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Value" "ACM2012-900-2P-T001"
+			(at 194.31 64.77 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" "moja:FIL_ACM2012-900-2P-T001"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" ""
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "MF" "TDK"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "Description_1" "ACM Series 0805 50 V 90 O 0.4 A 0.19 O DCR SMT Automotive Common Mode Filter"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "Package" "Horizontal-4 TDK"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "Price" "None"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "Check_prices" "https://www.snapeda.com/parts/ACM2012-900-2P-T001/TDK/view-part/?ref=eda"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "SnapEDA_Link" "https://www.snapeda.com/parts/ACM2012-900-2P-T001/TDK/view-part/?ref=snap"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "MP" "ACM2012-900-2P-T001"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "Purchase-URL" "https://www.snapeda.com/api/url_track_click_mouser/?unipart_id=263296&manufacturer=TDK&part_name=ACM2012-900-2P-T001&search_term=None"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "Availability" "In Stock"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(property "MANUFACTURER" "TDK"
+			(at 194.31 59.69 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify bottom)
+				(hide yes)
+			)
+		)
+		(pin "3"
+			(uuid "3d5d0d93-ce59-4cf1-be10-cbcdd5d2dadc")
+		)
+		(pin "1"
+			(uuid "cde17d53-2181-414e-b943-574d7a49e327")
+		)
+		(pin "2"
+			(uuid "8adb271e-6c70-430a-a98e-74c3d5330b7e")
+		)
+		(pin "4"
+			(uuid "c3da593d-183f-45de-8e45-e708c2af53c1")
+		)
+		(instances
+			(project "rayman_main"
+				(path "/fbce0b23-6767-4811-9332-0d8ff8d8a2ae"
+					(reference "FL1")
 					(unit 1)
 				)
 			)
@@ -15482,6 +16062,71 @@
 			(project "rayman_main"
 				(path "/fbce0b23-6767-4811-9332-0d8ff8d8a2ae"
 					(reference "#PWR029")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:+3V3")
+		(at 173.99 158.75 0)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "46a94121-a113-436f-8911-1242ef3cbe4a")
+		(property "Reference" "#PWR064"
+			(at 173.99 162.56 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "+3V3"
+			(at 172.974 153.162 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+			)
+		)
+		(property "Footprint" ""
+			(at 173.99 158.75 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 173.99 158.75 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"+3V3\""
+			(at 173.99 158.75 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "bb50c0da-c3cd-4882-8229-ed0cbc8d63ac")
+		)
+		(instances
+			(project "rayman_main"
+				(path "/fbce0b23-6767-4811-9332-0d8ff8d8a2ae"
+					(reference "#PWR064")
 					(unit 1)
 				)
 			)
@@ -18348,6 +18993,75 @@
 		)
 	)
 	(symbol
+		(lib_id "Device:R_Small")
+		(at 173.99 161.29 180)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "7f8b2db8-e2c1-4f31-810a-56daf64abb4d")
+		(property "Reference" "R44"
+			(at 176.53 160.0199 0)
+			(effects
+				(font
+					(size 1.016 1.016)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "10K"
+			(at 170.434 160.274 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+			(at 173.99 161.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 173.99 161.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor, small symbol"
+			(at 173.99 161.29 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "661a5328-0444-41c2-b218-5ae95c103400")
+		)
+		(pin "1"
+			(uuid "7e891952-f69b-47a3-8838-2031776e96e4")
+		)
+		(instances
+			(project "rayman_main"
+				(path "/fbce0b23-6767-4811-9332-0d8ff8d8a2ae"
+					(reference "R44")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
 		(lib_id "power:+3V3")
 		(at 160.02 -54.61 270)
 		(unit 1)
@@ -21154,7 +21868,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 209.55 64.77 270)
+		(at 200.66 71.12 270)
 		(unit 1)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -21163,7 +21877,7 @@
 		(fields_autoplaced yes)
 		(uuid "9e08ea0b-8b60-493f-880b-ef40be582bfa")
 		(property "Reference" "#PWR046"
-			(at 203.2 64.77 0)
+			(at 194.31 71.12 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21172,7 +21886,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 205.74 64.7699 90)
+			(at 196.85 71.1199 90)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21181,7 +21895,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 209.55 64.77 0)
+			(at 200.66 71.12 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21190,7 +21904,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 209.55 64.77 0)
+			(at 200.66 71.12 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -21199,7 +21913,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 209.55 64.77 0)
+			(at 200.66 71.12 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23186,7 +23900,7 @@
 	)
 	(symbol
 		(lib_id "power:GND")
-		(at 195.58 78.74 0)
+		(at 213.36 78.74 0)
 		(unit 0)
 		(exclude_from_sim no)
 		(in_bom yes)
@@ -23194,7 +23908,7 @@
 		(dnp no)
 		(uuid "cd77b60c-538f-48c7-a781-26d79603f07b")
 		(property "Reference" "#PWR0116"
-			(at 195.58 78.74 0)
+			(at 213.36 78.74 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23203,7 +23917,7 @@
 			)
 		)
 		(property "Value" "GND"
-			(at 192.278 85.344 0)
+			(at 210.058 85.344 0)
 			(effects
 				(font
 					(face "Times New Roman")
@@ -23213,7 +23927,7 @@
 			)
 		)
 		(property "Footprint" ""
-			(at 195.58 78.74 0)
+			(at 213.36 78.74 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23222,7 +23936,7 @@
 			)
 		)
 		(property "Datasheet" ""
-			(at 195.58 78.74 0)
+			(at 213.36 78.74 0)
 			(effects
 				(font
 					(size 1.27 1.27)
@@ -23231,7 +23945,7 @@
 			)
 		)
 		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
-			(at 195.58 78.74 0)
+			(at 213.36 78.74 0)
 			(effects
 				(font
 					(size 1.27 1.27)

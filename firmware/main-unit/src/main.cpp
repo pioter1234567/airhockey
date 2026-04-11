@@ -884,6 +884,13 @@ static void settingsLoadFromNVS()
   if (n != sizeof(g_set))
     settingsSaveToNVS();
 }
+
+static inline bool isUvEnabled()
+{
+  return flagOn(g_set.flags, F_UV);
+}
+
+
 static void sendSettingsAck()
 {
   twai_message_t m = {};
@@ -1292,14 +1299,17 @@ static inline bool isGameActive()
 static void fanAutoUpdate()
 {
   uint8_t target = 0;
+  bool uv = isUvEnabled();
 
   if (isGameActive() || isManualLampActive())
   {
-    target = g_fanGamePercent;
+    // --- W TRAKCIE GRY ---
+    target = uv ? 70 : 40;
   }
   else if (g_postGameAmbientFanActive)
   {
-    target = g_fanAmbientPercent;
+    // --- AMBIENTE ---
+    target = uv ? 30 : 0;
   }
   else
   {
