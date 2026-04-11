@@ -2509,6 +2509,12 @@
 		(uuid "0fdb7a00-1449-49ef-8cb6-d25dc1435051")
 	)
 	(junction
+		(at 41.91 78.74)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "53856429-6957-4f90-a329-87ddf7d907a3")
+	)
+	(junction
 		(at 15.24 38.1)
 		(diameter 0)
 		(color 0 0 0 0)
@@ -2561,6 +2567,18 @@
 		(diameter 0)
 		(color 0 0 0 0)
 		(uuid "b2b9363b-ad69-4f27-8341-a8e2d00b9997")
+	)
+	(junction
+		(at 82.55 114.3)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "b4581080-7017-4da1-bbd7-ae744316d3c8")
+	)
+	(junction
+		(at 41.91 85.09)
+		(diameter 0)
+		(color 0 0 0 0)
+		(uuid "da035ee0-37a2-45d7-bb59-2de33145946e")
 	)
 	(junction
 		(at 24.13 41.91)
@@ -2650,7 +2668,7 @@
 	)
 	(wire
 		(pts
-			(xy 41.91 72.39) (xy 41.91 86.36)
+			(xy 41.91 72.39) (xy 41.91 78.74)
 		)
 		(stroke
 			(width 0)
@@ -2687,6 +2705,16 @@
 			(type default)
 		)
 		(uuid "1949d3ae-ae60-412d-8207-fdd084487792")
+	)
+	(wire
+		(pts
+			(xy 41.91 85.09) (xy 41.91 86.36)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "1d678e56-9c35-40bf-89ca-1cd39ddd6843")
 	)
 	(wire
 		(pts
@@ -2727,6 +2755,16 @@
 			(type default)
 		)
 		(uuid "2e531bf2-aa7f-4964-adbd-6f93a199b403")
+	)
+	(wire
+		(pts
+			(xy 31.75 85.09) (xy 33.02 85.09)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "3687aa2c-5975-414c-a1f5-1c85a12a0df3")
 	)
 	(wire
 		(pts
@@ -2777,6 +2815,16 @@
 			(type default)
 		)
 		(uuid "43d81f06-24fe-4497-9401-5af1f22cdba7")
+	)
+	(wire
+		(pts
+			(xy 41.91 78.74) (xy 41.91 85.09)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "4c5997b6-c602-4fdc-bcb0-a2a812bf471e")
 	)
 	(wire
 		(pts
@@ -2837,6 +2885,26 @@
 			(type default)
 		)
 		(uuid "6b541818-5be3-4321-9b1c-e460b8d52c2d")
+	)
+	(wire
+		(pts
+			(xy 82.55 114.3) (xy 82.55 120.65)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "7161448b-9b3b-4fd9-8d05-8de767bf9648")
+	)
+	(wire
+		(pts
+			(xy 82.55 114.3) (xy 31.75 114.3)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "71e56333-03ea-40be-8fbf-874431e4200a")
 	)
 	(wire
 		(pts
@@ -2910,7 +2978,7 @@
 	)
 	(wire
 		(pts
-			(xy 82.55 91.44) (xy 82.55 120.65)
+			(xy 82.55 91.44) (xy 82.55 114.3)
 		)
 		(stroke
 			(width 0)
@@ -2987,6 +3055,16 @@
 			(type default)
 		)
 		(uuid "8f1b4ff7-e9c7-4d46-ae40-bf660081c05b")
+	)
+	(wire
+		(pts
+			(xy 31.75 85.09) (xy 31.75 114.3)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "8fc0b0d7-a6e6-40a0-b42a-28b29ad41611")
 	)
 	(wire
 		(pts
@@ -3157,6 +3235,16 @@
 			(type default)
 		)
 		(uuid "d22ae1f4-4cf1-4d69-a917-56f71e56e4e3")
+	)
+	(wire
+		(pts
+			(xy 38.1 85.09) (xy 41.91 85.09)
+		)
+		(stroke
+			(width 0)
+			(type default)
+		)
+		(uuid "d35419fb-bd5e-4bf6-b5f1-7337bc9f599b")
 	)
 	(wire
 		(pts
@@ -5055,6 +5143,75 @@
 			(project "lamp-driver"
 				(path "/8d1b4815-1b67-41e7-a6f2-54ca5c4f4dfa"
 					(reference "C3")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "Device:R_Small")
+		(at 35.56 85.09 270)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(uuid "80f9b4c8-8f72-458e-ab8b-3d510b418c95")
+		(property "Reference" "R3"
+			(at 34.2899 82.55 0)
+			(effects
+				(font
+					(size 1.016 1.016)
+				)
+				(justify right)
+			)
+		)
+		(property "Value" "10k"
+			(at 42.418 79.756 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" "Resistor_SMD:R_0805_2012Metric"
+			(at 35.56 85.09 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" "~"
+			(at 35.56 85.09 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Resistor, small symbol"
+			(at 35.56 85.09 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "2"
+			(uuid "9edcdf3f-9569-4c19-bf2c-1332288f928e")
+		)
+		(pin "1"
+			(uuid "7dd9b259-317d-4642-ba3b-e9b9c8b7f9e0")
+		)
+		(instances
+			(project "lamp-driver"
+				(path "/8d1b4815-1b67-41e7-a6f2-54ca5c4f4dfa"
+					(reference "R3")
 					(unit 1)
 				)
 			)
@@ -7342,6 +7499,73 @@
 			(project "lamp-driver"
 				(path "/8d1b4815-1b67-41e7-a6f2-54ca5c4f4dfa"
 					(reference "#PWR03")
+					(unit 1)
+				)
+			)
+		)
+	)
+	(symbol
+		(lib_id "power:GND")
+		(at 41.91 78.74 270)
+		(unit 1)
+		(exclude_from_sim no)
+		(in_bom yes)
+		(on_board yes)
+		(dnp no)
+		(fields_autoplaced yes)
+		(uuid "fcd95f67-9f0e-4097-9e84-a0256f771d2a")
+		(property "Reference" "#PWR012"
+			(at 35.56 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Value" "GND"
+			(at 38.1 78.7399 90)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(justify right)
+			)
+		)
+		(property "Footprint" ""
+			(at 41.91 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Datasheet" ""
+			(at 41.91 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(property "Description" "Power symbol creates a global label with name \"GND\" , ground"
+			(at 41.91 78.74 0)
+			(effects
+				(font
+					(size 1.27 1.27)
+				)
+				(hide yes)
+			)
+		)
+		(pin "1"
+			(uuid "b17b9254-b788-4798-b19b-c44b3be2527c")
+		)
+		(instances
+			(project "lamp-driver"
+				(path "/8d1b4815-1b67-41e7-a6f2-54ca5c4f4dfa"
+					(reference "#PWR012")
 					(unit 1)
 				)
 			)

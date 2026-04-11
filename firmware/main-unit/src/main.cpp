@@ -98,6 +98,12 @@ static bool g_postGameActive = false;
 static uint32_t g_postGameStartMs = 0;
 static const uint32_t POST_GAME_DURATION_MS = 600000 ; // 10 min
 
+//UV LEVELS
+#define UV_LEVEL_IDLE_DUTY     0.00f
+#define UV_LEVEL_AMBIENT_DUTY  0.1f
+#define UV_LEVEL_BASE_DUTY     0.4f
+#define UV_LEVEL_BOOST_DUTY    0.8f
+
 
 // ==================== PUCKLOCK (TB6612/TB505A1) ====================
 
@@ -109,21 +115,20 @@ static const uint32_t POST_GAME_DURATION_MS = 600000 ; // 10 min
 #define PIN_BIN2 10 //test
 
 
-// UV (LDD-500H DIM on GPIO14)
+// UV (LDD-1000H DIM on GPIO14)
 #define PIN_UV_DIM 14
 #define UV_PWM_CH   0
 #define UV_PWM_HZ   1000
-#define UV_PWM_RES  12
+#define UV_PWM_RES  8
 
 static bool g_uvCur = false;
 
-static inline uint32_t pwmDuty12(float duty)
+static inline uint8_t pwmDutyUv(float duty)
 {
   if (duty < 0.0f) duty = 0.0f;
   if (duty > 1.0f) duty = 1.0f;
-  return (uint32_t)(duty * ((1u << UV_PWM_RES) - 1) + 0.5f);
+  return (uint8_t)(duty * 255.0f + 0.5f);
 }
-
 
 // FAN PWM on GPIO2
 #define PIN_FAN_PWM 2
@@ -773,34 +778,7 @@ static inline void lightsSetMode(uint8_t mode)
   Serial.printf("[LIGHTS] mode=%u\n", mode);
   // TODO: tu wyślij faktyczne komendy do sterownika świateł
 }
-static inline void uvSet(bool on)
-{
-  static uint32_t lastToggle = 0;
-  static bool high = false;
 
-  if (!on)
-  {
-    ledcWrite(UV_PWM_CH, 0);
-    return;
-  }
-
-  uint32_t now = millis();
-
-  if (now - lastToggle >= 500)
-  {
-    lastToggle = now;
-    high = !high;
-  }
-
-  float duty = high ? 0.40f : 0.40f;
-
-  ledcWrite(UV_PWM_CH, pwmDuty12(duty));
-}
-
-static void uvSetLevel(float duty) // 0.0 - 1.0
-{
-  ledcWrite(UV_PWM_CH, pwmDuty12(duty));
-}
 
 
 static inline void goalsIllumSet(bool on) { Serial.printf("[GOALS ILLUM] %s\n", on ? "ON" : "OFF"); }
@@ -1391,7 +1369,6 @@ static void lightsApplyFromFlags()
   if (!gameActive)
   {
     lightsSetMode(0);
-    uvSetLevel(0.0f);
     goalsIllumSet(false);
     return;
   }
@@ -1401,7 +1378,6 @@ static void lightsApplyFromFlags()
   uint8_t mode = (strobes ? 2 : (anim ? 1 : 0));
 
   lightsSetMode(mode);
-  uvSet(flagOn(g_set.flags, F_UV));
   goalsIllumSet(flagOn(g_set.flags, F_GOALILLUM));
 }
 
@@ -2496,22 +2472,48 @@ static void showPurpleWithCorners(uint8_t bgLevel)
   matrixShow();
 }
 
+
+
+static float g_uvCurrent = -1.0f; // żeby nie spamować PWM bez potrzeby
+static void uvSetLevel(float duty) // 0.0 - 1.0
+{
+  if (duty < 0.0f) duty = 0.0f;
+  if (duty > 1.0f) duty = 1.0f;
+
+  // zabezpieczenie: jeśli UV wyłączone w ustawieniach → zawsze 0
+  if (!flagOn(g_set.flags, F_UV))
+    duty = 0.0f;
+
+  // jeśli nic się nie zmieniło → nie pisz ponownie PWM
+  if (fabsf(duty - g_uvCurrent) < 0.0005f)
+    return;
+
+  g_uvCurrent = duty;
+
+  uint8_t pwm = pwmDutyUv(duty);
+  ledcWrite(UV_PWM_CH, pwm);
+
+  Serial.printf("[UV] level=%.3f (PWM=%u/255)\n", duty, (unsigned)pwm);
+}
+
+
 static void applyPostGameLights()
 {
   bool uvEnabled = flagOn(g_set.flags, F_UV);
 
   if (uvEnabled)
   {
-    uvSetLevel(0.03f);   // 1% UV przez 10 min
+    uvSetLevel(UV_LEVEL_AMBIENT_DUTY);   
     matrixFill(0, 0, 0);
     matrixShow();
   }
   else
   {
-    uvSetLevel(0.0f);    // UV całkiem OFF
-    showPurpleWithCorners(0);  // tylko 4 rogi przez 10 min
+    uvSetLevel(0.0f);                    // <-- dla porządku też jawnie
+    showPurpleWithCorners(0);
   }
 }
+
 
 static void enterGameOver()
 {
@@ -2569,13 +2571,13 @@ static void applyIdleAmbientLights()
 {
   if (flagOn(g_set.flags, F_UV))
   {
-    uvSetLevel(0.01f);   // 1% UV
+    
     matrixFill(0, 0, 0);
     matrixShow();
   }
   else
   {
-    uvSetLevel(0.0f);
+ 
     showPurpleWithCorners(0);
   }
 }
@@ -2593,7 +2595,7 @@ static void runBootLightSequence()
   // start od ciemności
   matrixFill(0, 0, 0);
   matrixShow();
-  uvSetLevel(0.0f);
+
 
   // =========================
   // FADE IN
@@ -2608,12 +2610,7 @@ static void runBootLightSequence()
     matrixFill(level, 0, level);
     matrixShow();
 
-    if (uvEnabled)
-      uvSetLevel(0.40f * k);   // UV do 40%
-    else
-      uvSetLevel(0.0f);
-
-    delay(stepDelayMs);
+   
   }
 
   delay(250);
@@ -2636,14 +2633,14 @@ static void runBootLightSequence()
 
       // 40% -> 1%
       float uv = 0.01f + (0.40f - 0.01f) * k;
-      uvSetLevel(uv);
+
 
       delay(stepDelayMs);
     }
 
     matrixFill(0, 0, 0);
     matrixShow();
-    uvSetLevel(0.01f);
+
   }
   else
   {
@@ -2656,11 +2653,11 @@ for (int i = steps; i >= 0; i--)
   uint8_t level = (uint8_t)(k * 255.0f + 0.5f);
 
   showPurpleWithCorners(level);
-  uvSetLevel(0.0f);
+
   delay(stepDelayMs);
 }
 
-uvSetLevel(0.0f);
+
 showPurpleWithCorners(0);
   }
 
@@ -2695,6 +2692,53 @@ static void strobeTick()
   matrixShow();
 }
 
+
+
+static float uvDutyFromAnimLevel(UvLevel level)
+{
+  switch (level)
+  {
+    case UV_LEVEL_OFF:   return UV_LEVEL_IDLE_DUTY;
+    case UV_LEVEL_BASE:  return UV_LEVEL_BASE_DUTY;
+    case UV_LEVEL_BOOST: return UV_LEVEL_BOOST_DUTY;
+    default:             return UV_LEVEL_IDLE_DUTY;
+  }
+}
+
+
+
+
+
+
+
+static float uvTargetFromState()
+{
+  if (g_postGameActive)
+  {
+    return flagOn(g_set.flags, F_UV) ? UV_LEVEL_AMBIENT_DUTY : 0.0f;
+  }
+
+  switch (g_state)
+  {
+    case GState::PREPARE:
+    case GState::COUNTDOWN:
+    case GState::ROUND_NORMAL:
+    case GState::ROUND_MUSIC:
+      return flagOn(g_set.flags, F_UV) ? UV_LEVEL_BASE_DUTY : 0.0f;
+
+    default:
+      return 0.0f;
+  }
+}
+
+
+
+
+static void uvApply()
+{
+  uvSetLevel(uvTargetFromState());
+}
+
 // ========================= Arduino setup/loop =========================
 void setup()
 {
@@ -2706,7 +2750,11 @@ void setup()
 
   ledcSetup(UV_PWM_CH, UV_PWM_HZ, UV_PWM_RES);
 ledcAttachPin(PIN_UV_DIM, UV_PWM_CH);
-ledcWrite(UV_PWM_CH, 0);   // startowo zgaszone
+
+uvSetLevel(UV_LEVEL_IDLE_DUTY);
+
+
+//ledcWrite(UV_PWM_CH, 0);   // startowo zgaszone
 g_uvCur = false;
 
 ledcSetup(FAN_PWM_CH, FAN_PWM_HZ, FAN_PWM_RES);
@@ -2774,7 +2822,7 @@ adcThreshLoadFromNVS();
 printSettings(g_set);
 
 // DOPIERO TERAZ odpal sekwencję startową, bo używa F_UV
-runBootLightSequence();
+//runBootLightSequence();
 
   Serial.printf("\n== CAN RX @250kbps  TX=%d RX=%d ==\n", (int)CAN_TX_PIN, (int)CAN_RX_PIN);
   Serial.println("[READY] Waiting for START (0x301: 01 gtype gindex)");
@@ -2804,6 +2852,8 @@ static inline bool uvShouldBeOn()
 
 void loop()
 {
+
+
   // =========================================================
   // 1) POST-GAME TIMEOUT
   // =========================================================
@@ -2814,7 +2864,7 @@ void loop()
 
     if (now - g_postGameStartMs >= POST_GAME_DURATION_MS)
     {
-      uvSetLevel(0.0f);
+      
       matrixFill(0, 0, 0);
       matrixShow();
 
@@ -3378,20 +3428,7 @@ void loop()
         (uint8_t)g_theme,
         now - g_musicStartMs);
 
-    switch (uvLevel)
-    {
-      case UV_LEVEL_OFF:
-        ledcWrite(UV_PWM_CH, 0);
-        break;
-
-      case UV_LEVEL_BASE:
-        ledcWrite(UV_PWM_CH, pwmDuty12(0.40f));
-        break;
-
-      case UV_LEVEL_BOOST:
-        ledcWrite(UV_PWM_CH, pwmDuty12(0.80f));
-        break;
-    }
+      uvSetLevel(uvDutyFromAnimLevel(uvLevel));
 
     return;
   }
@@ -3419,14 +3456,8 @@ if (g_postGameActive &&
   // ---------------------------------------------------------
   animsTick(now);
 
-  if (flagOn(g_set.flags, F_UV))
-  {
-    ledcWrite(UV_PWM_CH, pwmDuty12(0.40f));
-  }
-  else
-  {
-    ledcWrite(UV_PWM_CH, 0);
-  }
+
+  uvApply();
 }
 
 static bool binReadExact(uint8_t *dst, size_t n)
