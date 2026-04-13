@@ -4116,7 +4116,7 @@
 		(in_bom yes)
 		(on_board yes)
 		(dnp no)
-		(uuid "cd77b60c-538f-48c7-a781-26d79603f07b")
+		(uuid "cd77b60c-538f-48c7-a781-26d79603f07c")
 		(property "Reference" "#PWR018"
 			(at 153.67 60.96 0)
 			(effects
@@ -4164,7 +4164,7 @@
 			)
 		)
 		(pin "1"
-			(uuid "4ef5acda-c01d-4e42-bed6-d36b7b60fcc4")
+			(uuid "4ef5acda-c01d-4e42-bed6-d36b7b60fcc5")
 		)
 		(instances
 			(project "rayman_LCD_STM"

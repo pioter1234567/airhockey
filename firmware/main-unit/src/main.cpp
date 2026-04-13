@@ -154,8 +154,20 @@ static void fanSetPercent(uint8_t pct)
 
   g_fanPercent = pct;
 
-  ledcWrite(FAN_PWM_CH, fanDutyFromPercent(pct));
-  Serial.printf("[FAN] %u%%\n", g_fanPercent);
+  if (pct == 0)
+  {
+    ledcWrite(FAN_PWM_CH, 0);
+    ledcDetachPin(PIN_FAN_PWM);
+    pinMode(PIN_FAN_PWM, OUTPUT);
+    digitalWrite(PIN_FAN_PWM, LOW);   // twarde odcięcie MOSFET-a
+  }
+  else
+  {
+    ledcAttachPin(PIN_FAN_PWM, FAN_PWM_CH);
+    ledcWrite(FAN_PWM_CH, fanDutyFromPercent(pct));
+  }
+
+
 }
 
 static uint8_t g_fanGamePercent = 60;     // domyślnie dla gry i ręcznej lampy
@@ -1281,12 +1293,10 @@ static void fanAutoUpdate()
 
   if (isGameActive() || isManualLampActive())
   {
-    // --- W TRAKCIE GRY ---
     target = uv ? 70 : 40;
   }
   else if (g_postGameAmbientFanActive)
   {
-    // --- AMBIENTE ---
     target = uv ? 30 : 0;
   }
   else
@@ -1294,8 +1304,10 @@ static void fanAutoUpdate()
     target = 0;
   }
 
-  if (target != g_fanPercent)
+  if (target != g_fanPercent || target == 0)
     fanSetPercent(target);
+
+
 }
 
 static void musicAutoAdvanceTick()
@@ -2493,7 +2505,7 @@ static void uvSetLevel(float duty) // 0.0 - 1.0
   uint8_t pwm = pwmDutyUv(duty);
   ledcWrite(UV_PWM_CH, pwm);
 
-  Serial.printf("[UV] level=%.3f (PWM=%u/255)\n", duty, (unsigned)pwm);
+ 
 }
 
 
@@ -2758,9 +2770,7 @@ uvSetLevel(UV_LEVEL_IDLE_DUTY);
 g_uvCur = false;
 
 ledcSetup(FAN_PWM_CH, FAN_PWM_HZ, FAN_PWM_RES);
-ledcAttachPin(PIN_FAN_PWM, FAN_PWM_CH);
-ledcWrite(FAN_PWM_CH, 0);   // startowo OFF
-g_fanPercent = 0;
+fanSetPercent(0);
 
 
   File f = SD.open(TOAD_PATH, FILE_READ);
