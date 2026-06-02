@@ -210,16 +210,21 @@ unsigned long lastDfCheck = 0; //do wywalenia potem
 #define PIN_STBY -1
 #endif
 
-// Animacje LED lampa gora
-static const char *TOAD_PATH = "/anims/toad.bin";
-static const char *GLOOGLOO_PATH = "/anims/gloogloo.bin"; // "20.000 lums under the sea" 🌊
+// Animacje LED lampa góra
 static const char *TEENSIES_PATH = "/anims/teensies.bin";
+static const char *TOAD_PATH     = "/anims/toad.bin";
+static const char *FIESTA_PATH   = "/anims/fiesta.bin";
+static const char *GLOOGLOO_PATH = "/anims/gloogloo.bin"; // "20.000 lums under the sea" 🌊
+static const char *OLYMPUS_PATH  = "/anims/olympus.bin";
 static const char *GRANNIES_PATH = "/anims/grannies.bin";
-static const char *FIESTA_PATH = "/anims/fiesta.bin";
-static const char *OLYMPUS_PATH = "/anims/olympus.bin";
 
-// Animacje LED pod stołem
+// Animacje ambiente pod stołem
 static const char *TEENSIES_AMBIENT_PATH = "/anims/teensies_ambiente.bin";
+static const char *TOAD_AMBIENT_PATH     = "/anims/toad_ambiente.bin";
+static const char *FIESTA_AMBIENT_PATH   = "/anims/fiesta_ambiente.bin";
+static const char *GLOOGLOO_AMBIENT_PATH = "/anims/gloogloo_ambiente.bin";
+static const char *OLYMPUS_AMBIENT_PATH  = "/anims/olympus_ambiente.bin";
+static const char *GRANNIES_AMBIENT_PATH = "/anims/grannies_ambiente.bin";
 
 // Mapowanie: theme -> animacja BIN dla rundy MUSIC
 // Uwaga: jeśli pliku nie ma na SD, binStart() wypisze błąd i nic nie zagra (bez crasha).
@@ -234,11 +239,11 @@ static const char *MUSIC_ANIM_PATHS[] = {
 
 static const char *MUSIC_AMBIENT_PATHS[] = {
     TEENSIES_AMBIENT_PATH, // TH_TEENSIES
-    nullptr,               // TH_TOAD
-    nullptr,               // TH_FIESTA
-    nullptr,               // TH_20000
-    nullptr,               // TH_OLYMPUS
-    nullptr,               // TH_GRANNIES
+    TOAD_AMBIENT_PATH,     // TH_TOAD
+    FIESTA_AMBIENT_PATH,   // TH_FIESTA
+    GLOOGLOO_AMBIENT_PATH, // TH_20000
+    OLYMPUS_AMBIENT_PATH,  // TH_OLYMPUS
+    GRANNIES_AMBIENT_PATH, // TH_GRANNIES
 };
 
 /*bool binStart(const char* path)

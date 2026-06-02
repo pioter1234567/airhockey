@@ -1,8 +1,12 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <xrgb>
   <models>
-    <model DisplayAs="Window Frame" StringType="RGB Nodes" Antialias="1" PixelSize="2" Transparency="0" Rotation="CW" Controller="No Controller" LayoutGroup="Default" parm1="64" parm2="32" parm3="64" Dir="L" StartSide="T" name="Matrix" WorldPosX="628.1700" WorldPosY="430.1871" WorldPosZ="0.0000" ScaleX="10.9797" ScaleY="7.9151" ScaleZ="0.0154" RotateX="0.00000000" RotateY="0.00000000" RotateZ="0.00000000" versionNumber="7" StartChannel="1">
+    <model StringType="RGB Nodes" Dir="L" Antialias="1" PixelSize="2" Transparency="0" name="Matrix" StartSide="T" Controller="No Controller" DisplayAs="Vert Matrix" NoZig="false" AlternateNodes="false" parm3="2" LayoutGroup="Default" parm2="32" parm1="32" WorldPosX="640.2838" WorldPosY="735.5459" WorldPosZ="0.0000" ScaleX="11.8505" ScaleY="11.6458" ScaleZ="0.0163" RotateX="0.00000000" RotateY="0.00000000" RotateZ="0.00000000" versionNumber="7" StartChannel="1">
       <ControllerConnection Protocol="ws2811"/>
+      <subModel name="SubModel-1" layout="horizontal" type="ranges" bufferstyle="Default" line0="">
+        <Aliases/>
+        <ControllerConnection/>
+      </subModel>
     </model>
   </models>
   <view_objects>
@@ -20,9 +24,9 @@
   </perspectives>
   <settings>
     <LayoutMode3D value="0"/>
-    <defaultSeqView value="matrix"/>
     <previewWidth value="1280"/>
     <previewHeight value="720"/>
+    <defaultSeqView value="matrix"/>
   </settings>
   <colors>
     <DisabledEffect Red="200" Green="200" Blue="0"/>

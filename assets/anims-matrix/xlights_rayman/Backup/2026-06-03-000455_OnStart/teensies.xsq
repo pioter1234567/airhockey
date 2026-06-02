@@ -14,7 +14,7 @@
     <sequenceType>Media</sequenceType>
     <mediaFile>C:\Users\pio\Downloads\sounds_rayman\music\03\010.mp3</mediaFile>
     <sequenceDuration>114.079</sequenceDuration>
-    <imageDir/>
+    <imageDir></imageDir>
   </head>
   <nextid>1</nextid>
   <Jukebox/>
@@ -183,7 +183,7 @@
         <Effect ref="20" name="Ripple" id="4" startTime="20200" endTime="20450" palette="11"/>
         <Effect ref="33" name="VU Meter" id="5" startTime="27550" endTime="28950" palette="2"/>
         <Effect ref="34" name="Strobe" id="6" startTime="29900" endTime="30950" palette="2"/>
-        <Effect ref="35" name="Lightning" id="7" startTime="31950" endTime="32900" palette="2"/>
+        <Effect ref="35" name="Lightning" selected="1" id="7" startTime="31950" endTime="32900" palette="2"/>
         <Effect ref="12" name="Spirals" id="8" startTime="33850" endTime="34950" palette="2"/>
         <Effect ref="28" name="Spirals" id="9" startTime="35900" endTime="36850" palette="2"/>
         <Effect ref="12" name="Spirals" id="10" startTime="37850" endTime="38900" palette="2"/>
