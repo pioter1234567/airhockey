@@ -3,6 +3,7 @@
 #include <Preferences.h>
 #include "led_matrix.h"
 #include "anims.h"
+#include "table_lights.h"
 #include <WiFi.h>
 #include <SPI.h>
 #include <SD.h>
@@ -202,6 +203,8 @@ static bool isManualLampActive()
 // BUSY DF
 #define DF_BUSY_PIN 38
 
+unsigned long lastDfCheck = 0; //do wywalenia potem
+
 // Jeśli STBY masz podpięte na stałe do 3V3 -> ustaw -1
 #ifndef PIN_STBY
 #define PIN_STBY -1
@@ -210,12 +213,13 @@ static bool isManualLampActive()
 // Animacje LED lampa gora
 static const char *TOAD_PATH = "/anims/toad.bin";
 static const char *GLOOGLOO_PATH = "/anims/gloogloo.bin"; // "20.000 lums under the sea" 🌊
-
-// Placeholder paths (docelowo: każdy motyw muzyczny ma swój BIN)
 static const char *TEENSIES_PATH = "/anims/teensies.bin";
 static const char *GRANNIES_PATH = "/anims/grannies.bin";
 static const char *FIESTA_PATH = "/anims/fiesta.bin";
 static const char *OLYMPUS_PATH = "/anims/olympus.bin";
+
+// Animacje LED pod stołem
+static const char *TEENSIES_AMBIENT_PATH = "/anims/teensies_ambiente.bin";
 
 // Mapowanie: theme -> animacja BIN dla rundy MUSIC
 // Uwaga: jeśli pliku nie ma na SD, binStart() wypisze błąd i nic nie zagra (bez crasha).
@@ -226,6 +230,15 @@ static const char *MUSIC_ANIM_PATHS[] = {
     GLOOGLOO_PATH, // TH_20000
     OLYMPUS_PATH,  // TH_OLYMPUS
     GRANNIES_PATH, // TH_GRANNIES
+};
+
+static const char *MUSIC_AMBIENT_PATHS[] = {
+    TEENSIES_AMBIENT_PATH, // TH_TEENSIES
+    nullptr,               // TH_TOAD
+    nullptr,               // TH_FIESTA
+    nullptr,               // TH_20000
+    nullptr,               // TH_OLYMPUS
+    nullptr,               // TH_GRANNIES
 };
 
 /*bool binStart(const char* path)
@@ -1039,6 +1052,7 @@ static void applyRoundTheme(bool breathing)
 static uint16_t g_usedMask = 0;      // "no repeat" mask for 001..N (N<=8 here)
 static bool g_bgPlaying = false;     // background started for current game?
 static bool g_musicOnlyMode = false; // GT_MUSIC: only music round, no normal rounds
+static uint32_t g_musicStartMs = 0;
 
 static void sayStart(uint8_t gtype, uint8_t idx)
 {
@@ -1150,6 +1164,8 @@ static inline bool musicIsPlaying()
 {
   return digitalRead(DF_BUSY_PIN) == LOW; // BUSY LOW = gra
 }
+
+
 
 static void musicPlayTetris()
 {
@@ -1307,7 +1323,7 @@ static void fanAutoUpdate()
   if (target != g_fanPercent || target == 0)
     fanSetPercent(target);
 
-
+    
 }
 
 static void musicAutoAdvanceTick()
@@ -1483,18 +1499,29 @@ static void startMusicRound()
   musicPlayMusicRound();
   sendGameEvent(1, g_roundNo, 0); // RoundStart
 
-  // --- SD BIN anim  ---
-  {
-    const uint8_t ti = (uint8_t)g_theme;
-    const char *path = (ti < (uint8_t)(sizeof(MUSIC_ANIM_PATHS) / sizeof(MUSIC_ANIM_PATHS[0])))
-                           ? MUSIC_ANIM_PATHS[ti]
-                           : nullptr;
+// --- SD BIN anim  ---
+{
+  const uint8_t ti = (uint8_t)g_theme;
 
-    if (path)
-      binStart(path);
-    else
-      binStop();
+  const char *path = (ti < (uint8_t)(sizeof(MUSIC_ANIM_PATHS) / sizeof(MUSIC_ANIM_PATHS[0])))
+                         ? MUSIC_ANIM_PATHS[ti]
+                         : nullptr;
+
+  const char *ambientPath = (ti < (uint8_t)(sizeof(MUSIC_AMBIENT_PATHS) / sizeof(MUSIC_AMBIENT_PATHS[0])))
+                                ? MUSIC_AMBIENT_PATHS[ti]
+                                : nullptr;
+
+  if (path)
+  {
+    binStart(path); // ustawia g_musicStartMs
+    tableLightsMusicStart(ambientPath, g_musicStartMs);
   }
+  else
+  {
+    binStop();
+    tableLightsMusicStop();
+  }
+}
 
   Serial.printf("[ROUND] MUSIC started: %lus (theme=%s)\n",
                 (unsigned long)(g_round.tLimitMs / 1000UL),
@@ -2346,7 +2373,7 @@ if (!active) {
 // ANIMACJE led lampa gora z pliku
 static File binFile;
 static bool binPlaying = false;
-static uint32_t g_musicStartMs = 0;
+
 
 #define BIN_PIXELS 1024
 #define BIN_FRAME_SIZE (BIN_PIXELS * 3)
@@ -2358,7 +2385,6 @@ static const char *binPath = nullptr;
 static uint32_t binFrameCount = 0;        // ile pełnych klatek w pliku
 static uint32_t binLastRenderedFrame = UINT32_MAX; // żeby nie renderować 2x tej samej
 
-
 void binStop()
 {
   if (binFile)
@@ -2367,6 +2393,8 @@ void binStop()
   binPlaying = false;
   binFrameCount = 0;
   binLastRenderedFrame = UINT32_MAX;
+
+  tableLightsMusicStop();
 }
 
 void binStart(const char *path)
@@ -2505,7 +2533,7 @@ static void uvSetLevel(float duty) // 0.0 - 1.0
   uint8_t pwm = pwmDutyUv(duty);
   ledcWrite(UV_PWM_CH, pwm);
 
- 
+  Serial.printf("[UV] level=%.3f (PWM=%u/255)\n", duty, (unsigned)pwm);
 }
 
 
@@ -2788,6 +2816,7 @@ fanSetPercent(0);
   btStop();
 #endif
 matrixInit(200); // jasnosc startowa
+tableLightsInit();
 
 animsInit();
 animsSetMode(ANIM_OFF);
@@ -2875,11 +2904,12 @@ void loop()
     if (now - g_postGameStartMs >= POST_GAME_DURATION_MS)
     {
       
-      matrixFill(0, 0, 0);
-      matrixShow();
+matrixFill(0, 0, 0);
+tableLightsAllOff();
+matrixShow();
 
-      g_postGameActive = false;
-      g_postGameAmbientFanActive = false;
+g_postGameActive = false;
+g_postGameAmbientFanActive = false;
       Serial.println("[POST GAME] timeout -> all OFF");
     }
   }
@@ -3357,6 +3387,12 @@ void loop()
   remainLogTick();
   fanAutoUpdate();
 
+
+
+
+
+
+
   // =========================================================
   // 6) CAN AUTO-RECOVERY
   // =========================================================
@@ -3428,9 +3464,10 @@ void loop()
   // BIN ma timing po czasie absolutnym, więc jeśli ręczna lampa
   // przez chwilę go zasłaniała, to po powrocie wskoczy w poprawne
   // miejsce utworu/animacji.
-  if (binPlaying)
-  {
-    binUpdate();
+if (binPlaying)
+{
+  tableLightsTick(now);
+  binUpdate();
 
     UvLevel uvLevel = animsGetUvLevel(
         flagOn(g_set.flags, F_UV),

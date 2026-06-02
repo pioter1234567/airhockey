@@ -1,4 +1,4 @@
-26793862019045811
+26797414542198099
 Audio_Module
 Reverb_BTDR-1H
 Digital Reverberation Unit, http://www.belton.co.kr/inc/downfile.php?seq=17&file=pdf (footprint from http://www.uk-electronic.de/PDF/BTDR-1.pdf)
@@ -106449,12 +106449,26 @@ SOIC127P599X175-8N
 8
 8
 moja
+SON50P350X135X55-14N
+
+
+0
+14
+14
+moja
 SOT23-3
 
 
 0
 3
 3
+moja
+SOT65P210X110-5N
+
+
+0
+5
+5
 moja
 TFT 1.8 No card No touch
 Adafruit SSD1306 OLED 1.3 inch 128x64 I2C & SPI https://learn.adafruit.com/monochrome-oled-breakouts/downloads
