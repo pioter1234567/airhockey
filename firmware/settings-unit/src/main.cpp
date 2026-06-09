@@ -842,20 +842,36 @@ bool        rtcWarnChangeBat= false;
 bool        rtcWarnNotFound = false;
 
 // Synchronizacja „zegara systemowego” z RTC (albo z czasem kompilacji)
+static bool rtcTimeLooksValid(const DateTime& t) {
+  return t.year() >= 2024 && t.year() <= 2099 &&
+         t.month() >= 1 && t.month() <= 12 &&
+         t.day() >= 1 && t.day() <= 31;
+}
+
 void rtcSyncToSystem() {
-  
+  if (rtcReady) {
+    DateTime now = rtc.now();
 
-
-
-  
-  if (rtcReady && rtcRunning) {
-    sysEpochAtSync = rtc.now().unixtime();
+    // Używamy RTC, jeśli czas wygląda sensownie.
+    // lostPower traktujemy jako ostrzeżenie o baterii/zaniku zasilania,
+    // ale nie jako bezwzględny zakaz użycia RTC.
+    if (rtcTimeLooksValid(now)) {
+      sysEpochAtSync = now.unixtime();
+      rtcRunning = true;
+    } else {
+      DateTime fallback(F(__DATE__), F(__TIME__));
+      sysEpochAtSync = fallback.unixtime();
+      rtcRunning = false;
+    }
   } else {
     DateTime fallback(F(__DATE__), F(__TIME__));
     sysEpochAtSync = fallback.unixtime();
+    rtcRunning = false;
   }
+
   sysMsAtSync = millis();
 }
+
 
 
 
@@ -1048,8 +1064,9 @@ enum Screen {
 
 Screen current     = SCR_MAIN;
 Screen previous    = SCR_MAIN;
-Screen backStack[5];
-int    backStackSize   = 0;
+static const int BACK_STACK_MAX = 16;
+Screen backStack[BACK_STACK_MAX];
+int    backStackSize = 0;
 unsigned long lastInputTime = 0;
 bool   screenDimmed    = false;
 
@@ -2479,18 +2496,100 @@ if (needsMenuBG && current != SCR_COINLOG) {
 }
 }
 // ====================== 27) Nawigacja ekranów ======================
-void enterScreen(Screen next) {
-  if (current == next) return;
-  if (backStackSize < 5) backStack[backStackSize++] = current;
-  previous = current;         // <— zapamiętaj skąd weszliśmy
-  current  = next;
+void clearBackStack()
+{
+  backStackSize = 0;
 }
 
-void goBack() {
-  if (backStackSize > 0) {
-    previous = current;       // <— też aktualizuj przy „wstecz”
-    current  = backStack[--backStackSize];
+void enterScreen(Screen next)
+{
+  if (current == next) return;
+
+  // nie dopisuj śmieci, jeśli stos pełny — usuń najstarszy wpis
+  if (backStackSize >= BACK_STACK_MAX)
+  {
+    memmove(backStack, backStack + 1, sizeof(Screen) * (BACK_STACK_MAX - 1));
+    backStackSize = BACK_STACK_MAX - 1;
   }
+
+  backStack[backStackSize++] = current;
+
+  previous = current;
+  current = next;
+}
+
+Screen parentOf(Screen s)
+{
+  switch (s)
+  {
+    case SCR_PLAYROOT:
+    case SCR_SETTINGS:
+    case SCR_LAMPROOT:
+    case SCR_OTHER:
+    case SCR_COINROOT:
+      return SCR_MAIN;
+
+    case SCR_PLAY:
+    case SCR_MUSICROUND:
+      return SCR_PLAYROOT;
+
+    case SCR_GAMETIME:
+    case SCR_GOALS:
+    case SCR_LIGHTS:
+    case SCR_PUCKLOCK:
+    case SCR_SETDT:
+    case SCR_GOALCAL:
+      return SCR_SETTINGS;
+
+    case SCR_STROBES:
+    case SCR_ANIMATION:
+    case SCR_STANDBY:
+    case SCR_UVLIGHT:
+    case SCR_GOALILLUM:
+      return SCR_LIGHTS;
+
+    case SCR_SETDT_EDIT:
+    case SCR_DST:
+      return SCR_SETDT;
+
+    case SCR_GOALCAL_RUN:
+    case SCR_GOALCAL_THRESH:
+      return SCR_GOALCAL;
+
+    case SCR_COINLOG:
+      return SCR_COINROOT;
+
+    case SCR_LAMPWHITE:
+    case SCR_LAMPCOLOUR:
+      return SCR_LAMPROOT;
+
+    case SCR_LAMPCOLOUR_TIME:
+      return SCR_LAMPCOLOUR;
+
+    default:
+      return SCR_MAIN;
+  }
+}
+
+void goBack()
+{
+  if (backStackSize > 0)
+  {
+    previous = current;
+    current = backStack[--backStackSize];
+  }
+  else
+  {
+    previous = current;
+    current = parentOf(current);
+  }
+}
+
+void resetToScreen(Screen next)
+{
+  clearBackStack();
+  previous = current;
+  current = next;
 }
 
 void dropTopScreenIf(Screen s) {
@@ -2583,7 +2682,7 @@ static void startRandomFullFromCoin() {
   else if (st == START_COOLDOWN)    showERROR("Wait.");
   else                              showERROR("CAN error");
   delay(600);
-  enterScreen(SCR_MAIN);
+  resetToScreen(SCR_MAIN);
 }
 
 static void startRandomMusicFromCoin() {
@@ -2597,7 +2696,7 @@ static void startRandomMusicFromCoin() {
   else if (st == START_COOLDOWN)    showERROR("Wait.");
   else                              showERROR("CAN error");
   delay(600);
-  enterScreen(SCR_MAIN);
+  resetToScreen(SCR_MAIN);
 }
 
 
@@ -2614,19 +2713,31 @@ void setdtNextFieldOrSave() {
   DateTime val(dt.year, dt.month, dt.day, dt.hour, dt.minute, dt.second);
   if (rtcReady) {
     rtc.adjust(val);
-    delay(20);
+delay(50);
 
-    bool lp = rtc.lostPower();
-    Serial.printf("[RTC] after manual set, lostPower=%d\n", lp ? 1 : 0);
+DateTime check = rtc.now();
+bool lp = rtc.lostPower();
 
-    rtcRunning = !lp;
-    rtcWarnChangeBat = false;
+Serial.printf("[RTC] after manual set, lostPower=%d\n", lp ? 1 : 0);
+Serial.printf("[RTC] readback: %04d-%02d-%02d %02d:%02d:%02d | unix=%lu\n",
+              check.year(), check.month(), check.day(),
+              check.hour(), check.minute(), check.second(),
+              (unsigned long)check.unixtime());
 
-    rtcSyncToSystem();
-    dstSummerNow = isEuDstLocal(dt.year, dt.month, dt.day, dt.hour);
-    dstLastSwitchYear  = 0;
-    dstLastSwitchMonth = 0;
-    dstLastSwitchDay   = 0;
+// Po ręcznym ustawieniu ufamy RTC, jeśli odczyt wygląda sensownie.
+// Nawet jeśli lostPower jeszcze krzyczy, to nie wywalamy czasu do fallbacku.
+rtcRunning = rtcTimeLooksValid(check);
+rtcWarnChangeBat = lp;   // ostrzegaj, ale nie blokuj czasu
+
+rtcSyncToSystem();
+
+dstSummerNow = isEuDstLocal(dt.year, dt.month, dt.day, dt.hour);
+dstLastSwitchYear  = 0;
+dstLastSwitchMonth = 0;
+dstLastSwitchDay   = 0;
+
+// zapisz też stan DST po ręcznym ustawieniu
+sdSaveSettings();
 
     showOK("RTC updated");
     delay(800);
@@ -3112,11 +3223,17 @@ pinMode(COIN_5_PIN, INPUT_PULLUP);
   delay(10);
   i2cScan();
 
-  rtcReady   = rtc.begin(&Wire);
-  delay(5);
-  rtcRunning = rtcReady && !rtc.lostPower();
-  DateTime build(F(__DATE__), F(__TIME__));
-  DateTime now = (rtcReady ? rtc.now() : build);
+rtcReady = rtc.begin(&Wire);
+delay(5);
+
+DateTime build(F(__DATE__), F(__TIME__));
+DateTime now = rtcReady ? rtc.now() : build;
+
+bool rtcLost = rtcReady && rtc.lostPower();
+rtcRunning = rtcReady && rtcTimeLooksValid(now);
+
+rtcWarnNotFound  = !rtcReady;
+rtcWarnChangeBat = rtcReady && rtcLost;
 
 
     Serial.println("=== RTC DIAG ===");
@@ -3142,9 +3259,7 @@ pr.begin("rtc", false);
 pr.putUInt("lastRtc", (uint32_t)now.unixtime());
 pr.end();
 
-// ostrzeżenia RTC
-rtcWarnNotFound = !rtcReady;
-rtcWarnChangeBat = (rtcReady && !rtcRunning);
+
 
   rtcSyncToSystem();
 
@@ -3289,8 +3404,8 @@ if (current == SCR_GOALCAL_RUN && g_goalCal.active) {
 if (!screenDimmed && (millis() - lastInputTime > 180000UL)) {
   digitalWrite(LCD_PWR, LOW);  // OFF
   screenDimmed = true;
-  current = SCR_MAIN;
-  selMain = 0;
+resetToScreen(SCR_MAIN);
+selMain = 0;
   tft.fillScreen(ST77XX_BLACK);
 }
 
@@ -3707,7 +3822,7 @@ case SCR_GOALCAL_RUN:
       else                              { showERROR("CAN error"); }
 
       delay(1000);
-      enterScreen(SCR_MAIN);
+      resetToScreen(SCR_MAIN);
       need = true;
       break;
     }

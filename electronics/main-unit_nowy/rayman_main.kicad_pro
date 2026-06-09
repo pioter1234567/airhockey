@@ -1241,7 +1241,7 @@
       "plot": "ger/",
       "pos_files": "./",
       "specctra_dsn": "",
-      "step": "",
+      "step": "rayman_main.step",
       "svg": "",
       "vrml": ""
     },

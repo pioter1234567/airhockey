@@ -46,6 +46,18 @@ static uint32_t ambientStartMs = 0;
 
 static uint8_t ambientBuf[AMBIENT_FRAME_SIZE];
 
+
+
+// =====================================================
+// ROUND AMBIENT STATE
+// =====================================================
+
+static bool ambientRoundEnabled = false;
+static bool ambientBreathing = false;
+static CRGB ambientRoundColor = CRGB::Black;
+static uint32_t ambientLastSolidFrame = 0;
+
+
 // =====================================================
 // HELPERS
 // =====================================================
@@ -70,6 +82,30 @@ static bool readExact(File &file, uint8_t *dst, size_t n)
 static void ambientClear()
 {
   fill_solid(ambientLeds, AMBIENT_LED_COUNT, CRGB::Black);
+}
+
+
+static void renderAmbientRound(uint32_t nowMs)
+{
+  // limit ~40 FPS, tak jak matryca
+  if (nowMs - ambientLastSolidFrame < 25)
+    return;
+
+  ambientLastSolidFrame = nowMs;
+
+  float scale = 1.0f;
+
+  if (ambientBreathing)
+  {
+    float t = (nowMs % 2600) / 2600.0f;
+    scale = 0.35f + 0.65f * (0.5f - 0.5f * cosf(t * 2.0f * PI));
+  }
+
+  CRGB c = ambientRoundColor;
+  c.nscale8_video((uint8_t)(scale * 255.0f));
+
+  // Tak samo jak przy BIN-ach ambiente: swap R/G
+  fill_solid(ambientLeds, AMBIENT_LED_COUNT, CRGB(c.g, c.r, c.b));
 }
 
 #if GOAL_LED_COUNT > 0
@@ -180,13 +216,42 @@ void tableLightsMusicStop()
   ambientLastFrame = UINT32_MAX;
 }
 
+
+void tableLightsSetRoundColor(uint8_t r, uint8_t g, uint8_t b)
+{
+  ambientRoundColor = CRGB(r, g, b);
+}
+
+void tableLightsSetBreathing(bool enable)
+{
+  ambientBreathing = enable;
+}
+
+void tableLightsSetRoundEnabled(bool enable)
+{
+  ambientRoundEnabled = enable;
+
+  if (!enable)
+    ambientClear();
+}
+
 void tableLightsTick(uint32_t nowMs)
 {
   if (!ambientPlaying)
+  {
+    if (ambientRoundEnabled)
+      renderAmbientRound(nowMs);
+
     return;
+  }
 
   if (!ambientFile || ambientFrameCount == 0)
+  {
+    if (ambientRoundEnabled)
+      renderAmbientRound(nowMs);
+
     return;
+  }
 
   uint32_t elapsed = nowMs - ambientStartMs;
   uint32_t frameIndex = (elapsed / TABLE_BIN_FRAME_MS) % ambientFrameCount;

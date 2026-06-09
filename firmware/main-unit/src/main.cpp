@@ -1023,41 +1023,126 @@ static const uint32_t MUSIC_ROUND_TIME_MS[TH_COUNT] = {
     96000UL   // grannies   1:36
 };
 
+
+
+// --- SD BIN anim forward declarations ---
+void binStop();
+void binStart(const char *path);
+void binUpdate();
+
 static ThemeId g_theme = TH_TEENSIES;
 static void applyRoundTheme(bool breathing)
 {
-  animsSetBreathing(breathing);
+  uint8_t r = 0;
+  uint8_t g = 0;
+  uint8_t b = 0;
 
   switch (g_theme)
   {
-  case TH_TEENSIES:
-    animsSetRoundColor(0, 0, 255);
-    break; // niebieski
-  case TH_TOAD:
-    animsSetRoundColor(0, 255, 0);
-    break; // zielony
-  case TH_FIESTA:
-    animsSetRoundColor(255, 90, 0);
-    break; // pomarańczowy
-  case TH_20000:
-    animsSetRoundColor(0, 50, 70);
-    break; // ciemny morski
-  case TH_OLYMPUS:
-    animsSetRoundColor(150, 0, 255);
-    break; // fiolet
-  case TH_GRANNIES:
-    animsSetRoundColor(255, 0, 140);
-    break; // różowy
-  default:
-    animsSetRoundColor(0, 0, 0);
-    break;
+    case TH_TEENSIES:
+      r = 0;   g = 0;   b = 255; break; // niebieski
+
+    case TH_TOAD:
+      r = 0;   g = 255; b = 0;   break; // zielony
+
+    case TH_FIESTA:
+      r = 255; g = 90;  b = 0;   break; // pomarańczowy
+
+    case TH_20000:
+      r = 0;   g = 50;  b = 70;  break; // ciemny morski
+
+    case TH_OLYMPUS:
+      r = 150; g = 0;   b = 255; break; // fiolet
+
+    case TH_GRANNIES:
+      r = 255; g = 0;   b = 140; break; // różowy
+
+    default:
+      r = 0;   g = 0;   b = 0;   break;
   }
+
+  animsSetRoundColor(r, g, b);
+  animsSetBreathing(breathing);
+
+  tableLightsSetRoundColor(r, g, b);
+  tableLightsSetBreathing(breathing);
+  tableLightsSetRoundEnabled(true);
 }
+
+
+static void applyWhiteRoundLights()
+{
+  binStop();
+  tableLightsMusicStop();
+
+  animsSetRoundColor(255, 255, 255);
+  animsSetBreathing(false);
+  animsSetMode(ANIM_ROUND);
+
+  tableLightsSetRoundColor(255, 255, 255);
+  tableLightsSetBreathing(false);
+  tableLightsSetRoundEnabled(true);
+}
+
+static uint32_t g_musicStartMs = 0;
+
+static void applyRoundLightsBySettings(bool musicRound)
+{
+  const bool animOn   = flagOn(g_set.flags, F_ANIM);
+  const bool stroboOn = flagOn(g_set.flags, F_STROBES);
+
+  // ANIM OFF = biała lampa, niezależnie od strobo
+  if (!animOn)
+  {
+    applyWhiteRoundLights();
+    return;
+  }
+
+  // ANIM ON + STROBO ON + RUNDA MUZYCZNA = BIN-y
+  if (musicRound && stroboOn)
+  {
+    const uint8_t ti = (uint8_t)g_theme;
+
+    const char *path = (ti < (uint8_t)(sizeof(MUSIC_ANIM_PATHS) / sizeof(MUSIC_ANIM_PATHS[0])))
+                           ? MUSIC_ANIM_PATHS[ti]
+                           : nullptr;
+
+    const char *ambientPath = (ti < (uint8_t)(sizeof(MUSIC_AMBIENT_PATHS) / sizeof(MUSIC_AMBIENT_PATHS[0])))
+                                  ? MUSIC_AMBIENT_PATHS[ti]
+                                  : nullptr;
+
+    if (path)
+    {
+      binStart(path); // ustawia g_musicStartMs
+      tableLightsMusicStart(ambientPath, g_musicStartMs);
+    }
+    else
+    {
+      binStop();
+      tableLightsMusicStop();
+
+      // fallback, gdyby pliku BIN nie było
+      applyRoundTheme(true);
+      animsSetMode(ANIM_ROUND);
+    }
+
+    return;
+  }
+
+  // ANIM ON + STROBO OFF = kolory + oddychanie we wszystkich rundach
+  // ANIM ON + STROBO ON + pełna/normalna runda = kolory + oddychanie
+  binStop();
+  tableLightsMusicStop();
+
+  applyRoundTheme(true);
+  animsSetMode(ANIM_ROUND);
+}
+
 
 static uint16_t g_usedMask = 0;      // "no repeat" mask for 001..N (N<=8 here)
 static bool g_bgPlaying = false;     // background started for current game?
 static bool g_musicOnlyMode = false; // GT_MUSIC: only music round, no normal rounds
-static uint32_t g_musicStartMs = 0;
+
 
 static void sayStart(uint8_t gtype, uint8_t idx)
 {
@@ -1465,14 +1550,10 @@ static void startNormalRound()
                 g_roundNo, g_round.goalLimit,
                 (unsigned long)(g_round.tLimitMs / 1000),
                 g_set.goalsIdx, g_set.gameTimeIdx);
-  applyRoundTheme(false); // stały kolor
-  animsSetMode(ANIM_ROUND);
+applyRoundLightsBySettings(false);
 }
 
-// --- SD BIN anim forward declarations ---
-void binStop();
-void binStart(const char *path);
-void binUpdate();
+
 
 static void startMusicRound()
 {
@@ -1504,35 +1585,12 @@ static void startMusicRound()
   musicPlayMusicRound();
   sendGameEvent(1, g_roundNo, 0); // RoundStart
 
-// --- SD BIN anim  ---
-{
-  const uint8_t ti = (uint8_t)g_theme;
 
-  const char *path = (ti < (uint8_t)(sizeof(MUSIC_ANIM_PATHS) / sizeof(MUSIC_ANIM_PATHS[0])))
-                         ? MUSIC_ANIM_PATHS[ti]
-                         : nullptr;
-
-  const char *ambientPath = (ti < (uint8_t)(sizeof(MUSIC_AMBIENT_PATHS) / sizeof(MUSIC_AMBIENT_PATHS[0])))
-                                ? MUSIC_AMBIENT_PATHS[ti]
-                                : nullptr;
-
-  if (path)
-  {
-    binStart(path); // ustawia g_musicStartMs
-    tableLightsMusicStart(ambientPath, g_musicStartMs);
-  }
-  else
-  {
-    binStop();
-    tableLightsMusicStop();
-  }
-}
 
   Serial.printf("[ROUND] MUSIC started: %lus (theme=%s)\n",
                 (unsigned long)(g_round.tLimitMs / 1000UL),
                 THEMES[g_theme].name);
-  applyRoundTheme(true); // oddychanie
-  animsSetMode(ANIM_ROUND);
+applyRoundLightsBySettings(true);
 }
 
 
@@ -1541,6 +1599,7 @@ static void startMusicRound()
 static void endRound(bool finalGameOver = false)
 {
   binStop();
+  tableLightsMusicStop();
 
   uint8_t winner = 2;
   if (g_round.scoreA > g_round.scoreB) {
@@ -3495,21 +3554,24 @@ if (g_postGameActive &&
   return;
 }
 
-  if (g_state == GState::IDLE)
-  {
-    matrixFill(0, 0, 0);
-    matrixShow();
-    ledcWrite(UV_PWM_CH, 0);
-    return;
-  }
+if (g_state == GState::IDLE)
+{
+  tableLightsSetRoundEnabled(false);
+  tableLightsMusicStop();
 
-  // ---------------------------------------------------------
-  // 7.6) Normalne animacje matrycy
-  // ---------------------------------------------------------
-  animsTick(now);
+  matrixFill(0, 0, 0);
+  matrixShow();
+  ledcWrite(UV_PWM_CH, 0);
+  return;
+}
 
+// ---------------------------------------------------------
+// 7.6) Normalne animacje matrycy + ambiente
+// ---------------------------------------------------------
+tableLightsTick(now);
+animsTick(now);
 
-  uvApply();
+uvApply();
 }
 
 static bool binReadExact(uint8_t *dst, size_t n)
