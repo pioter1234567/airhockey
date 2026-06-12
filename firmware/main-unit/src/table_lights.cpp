@@ -59,6 +59,16 @@ static uint32_t ambientLastSolidFrame = 0;
 
 
 // =====================================================
+// GOAL FX STATE
+// =====================================================
+
+static bool goalFxActive = false;
+static uint8_t goalFxSide = 0;       // 0 = A, 1 = B
+static uint32_t goalFxStartMs = 0;
+static uint32_t goalFxDurationMs = 800;
+static uint32_t goalFxLastFrameMs = 0;
+
+// =====================================================
 // HELPERS
 // =====================================================
 
@@ -84,6 +94,77 @@ static void ambientClear()
   fill_solid(ambientLeds, AMBIENT_LED_COUNT, CRGB::Black);
 }
 
+
+static bool isAmbientLeftHalf(uint16_t i)
+{
+  // Pasek:
+  // 0..63    = góra, lewo -> prawo
+  // 64..95   = prawa strona, góra -> dół
+  // 96..159  = dół, prawo -> lewo
+  // 160..191 = lewa strona, dół -> góra
+
+  // Góra lewa połowa
+  if (i >= 0 && i <= 31)
+    return true;
+
+  // Dół lewa połowa
+  if (i >= 128 && i <= 159)
+    return true;
+
+  // Lewy bok
+  if (i >= 160 && i <= 191)
+    return true;
+
+  return false;
+}
+
+static void renderGoalFx(uint32_t nowMs)
+{
+  if (!goalFxActive)
+    return;
+
+  uint32_t dt = nowMs - goalFxStartMs;
+
+  if (dt >= goalFxDurationMs)
+  {
+    goalFxActive = false;
+    return;
+  }
+
+  // Limit klatek, żeby nie mielić bez sensu.
+  if (nowMs - goalFxLastFrameMs < 25)
+    return;
+
+  goalFxLastFrameMs = nowMs;
+
+  // Delikatny flash/puls na początku gola.
+  // 255 -> 120 w czasie efektu.
+  uint8_t power = 255;
+  if (goalFxDurationMs > 0)
+  {
+    power = 120 + (uint8_t)((goalFxDurationMs - dt) * 135UL / goalFxDurationMs);
+  }
+
+  CRGB green = CRGB(0, power, 0);
+  CRGB red   = CRGB(power, 0, 0);
+
+  for (uint16_t i = 0; i < AMBIENT_LED_COUNT; i++)
+  {
+    bool left = isAmbientLeftHalf(i);
+
+    // scoringSide 0:
+    // lewa połowa zielona, prawa czerwona
+    //
+    // scoringSide 1:
+    // prawa połowa zielona, lewa czerwona
+    bool winnerHalf = (goalFxSide == 0) ? left : !left;
+
+    CRGB c = winnerHalf ? green : red;
+
+    // Tak jak reszta ambiente: swap R/G.
+    ambientLeds[i] = CRGB(c.g, c.r, c.b);
+  }
+}
 
 static void renderAmbientRound(uint32_t nowMs)
 {
@@ -237,6 +318,15 @@ void tableLightsSetRoundEnabled(bool enable)
 
 void tableLightsTick(uint32_t nowMs)
 {
+
+    // Efekt gola ma priorytet nad BIN-em i stałym kolorem ambiente.
+  // Po zakończeniu goalFxActive wróci do false, a BIN wskoczy w aktualną klatkę,
+  // bo liczy czas od ambientStartMs.
+  if (goalFxActive)
+  {
+    renderGoalFx(nowMs);
+    return;
+  }
   if (!ambientPlaying)
   {
     if (ambientRoundEnabled)
@@ -297,7 +387,13 @@ void tableLightsTick(uint32_t nowMs)
 
 void tableLightsGoalFx(uint8_t scoringSide)
 {
-  Serial.printf("[TABLE] goal FX side=%u\n", (unsigned)scoringSide);
+  goalFxSide = scoringSide ? 1 : 0;
+  goalFxStartMs = millis();
+  goalFxDurationMs = 800;
+  goalFxLastFrameMs = 0;
+  goalFxActive = true;
+
+  Serial.printf("[TABLE] goal FX side=%u\n", (unsigned)goalFxSide);
 }
 
 void tableLightsSetGoalsEnabled(bool enabled)

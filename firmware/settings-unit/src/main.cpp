@@ -2372,6 +2372,28 @@ void drawFooterClock(bool force) {
   tft.print(timeBuf);
 }
 
+
+void drawStrobesMenu()
+{
+  drawMenuList("Strobes", onOffItems, onOffCount, selBin, strobesOn ? 0 : 1, true);
+
+  tft.setTextWrap(false);
+  tft.setTextSize(1);
+
+  const int16_t y = TOP_MARGIN + (onOffCount * LINE_H) + 10;
+
+  tft.setTextColor(COLOR_FG);
+
+  tft.setCursor(LEFT_MARGIN, y);
+  tft.print("Strobes need");
+
+  tft.setCursor(LEFT_MARGIN, y + 11);
+  tft.print("Animation ON");
+
+  tft.setCursor(LEFT_MARGIN, y + 22);
+  tft.print("to work.");
+}
+
 // ====================== 26) Redraw: wg aktualnego ekranu ======================
 void redraw() {
   // Tła dla ekranów: wszystkie menu, oprócz pełnoekranowych (PLAY, MUSICROUND, CONFIRM, ABOUT)
@@ -2412,9 +2434,9 @@ void redraw() {
     case SCR_LIGHTS:
       drawMenuList("Light effects", lightsItems, lightsCount, selLights);
       break;
-    case SCR_STROBES:
-      drawMenuList("Strobes", onOffItems, onOffCount, selBin, strobesOn ? 0 : 1, true);
-      break;
+case SCR_STROBES:
+  drawStrobesMenu();
+  break;
     case SCR_ANIMATION:
       drawMenuList("Animation", onOffItems, onOffCount, selBin, animOn ? 0 : 1, true);
       break;

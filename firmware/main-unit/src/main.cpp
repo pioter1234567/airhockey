@@ -931,6 +931,7 @@ static void settingsSyncWindow(uint32_t ms = 200)
         g_set.flags = m.data[3];
         settingsSaveToNVS();
         sendSettingsAck();
+        
         Serial.print("[CAN] SettingsUpdate during START → ");
         printSettings(g_set);
       }
@@ -1027,7 +1028,7 @@ static const uint32_t MUSIC_ROUND_TIME_MS[TH_COUNT] = {
 
 // --- SD BIN anim forward declarations ---
 void binStop();
-void binStart(const char *path);
+bool binStart(const char *path, uint32_t syncStartMs);
 void binUpdate();
 
 static ThemeId g_theme = TH_TEENSIES;
@@ -1098,7 +1099,7 @@ static void applyRoundLightsBySettings(bool musicRound)
     return;
   }
 
-  // ANIM ON + STROBO ON + RUNDA MUZYCZNA = BIN-y
+    // ANIM ON + STROBO ON + RUNDA MUZYCZNA = BIN-y
   if (musicRound && stroboOn)
   {
     const uint8_t ti = (uint8_t)g_theme;
@@ -1111,17 +1112,32 @@ static void applyRoundLightsBySettings(bool musicRound)
                                   ? MUSIC_AMBIENT_PATHS[ti]
                                   : nullptr;
 
-    if (path)
+    // Podczas rundy muzycznej osią czasu jest start rundy / start piosenki.
+    // Dzięki temu jak włączysz BIN w połowie utworu, wskoczy od razu w połowę animacji.
+
+    uint32_t syncStartMs = g_musicStartMs ? g_musicStartMs : millis();
+
+    binStop();
+    tableLightsMusicStop();
+
+    // binUpdate() renderuje tylko w ANIM_ROUND
+    animsSetBreathing(false);
+    animsSetMode(ANIM_ROUND);
+
+    // Ambiente ma grać BIN-em, nie stałym kolorem
+    tableLightsSetRoundEnabled(false);
+
+    if (path && binStart(path, syncStartMs))
     {
-      binStart(path); // ustawia g_musicStartMs
-      tableLightsMusicStart(ambientPath, g_musicStartMs);
+      // Ambiente dostaje dokładnie ten sam start czasu co główna matryca.
+      tableLightsMusicStart(ambientPath, syncStartMs);
     }
     else
     {
       binStop();
       tableLightsMusicStop();
 
-      // fallback, gdyby pliku BIN nie było
+      // fallback gdyby SD/plik padł
       applyRoundTheme(true);
       animsSetMode(ANIM_ROUND);
     }
@@ -1137,6 +1153,7 @@ static void applyRoundLightsBySettings(bool musicRound)
   applyRoundTheme(true);
   animsSetMode(ANIM_ROUND);
 }
+
 
 
 static uint16_t g_usedMask = 0;      // "no repeat" mask for 001..N (N<=8 here)
@@ -1499,6 +1516,32 @@ static void lightsApplyFromFlags()
   goalsIllumSet(flagOn(g_set.flags, F_GOALILLUM));
 }
 
+static void applyLiveSettingsNow()
+{
+  const bool roundActive =
+      (g_state == GState::ROUND_NORMAL) ||
+      (g_state == GState::ROUND_MUSIC);
+
+  lightsApplyFromFlags();
+
+  if (!roundActive)
+    return;
+
+  // Nie przerywamy efektu gola w połowie.
+  // Po golu animsOnGoal() sam wraca do ANIM_ROUND.
+  if (animsGetMode() == ANIM_GOAL)
+    return;
+
+  if (g_state == GState::ROUND_MUSIC)
+  {
+    applyRoundLightsBySettings(true);
+  }
+  else
+  {
+    applyRoundLightsBySettings(false);
+  }
+}
+
 static void roundResetScore()
 {
   g_round.scoreA = g_round.scoreB = 0;
@@ -1558,6 +1601,13 @@ applyRoundLightsBySettings(false);
 static void startMusicRound()
 {
   blowerSet(true);
+
+  binStop();
+  tableLightsMusicStop();
+  g_strobeActive = false;
+  g_strobeLampOn = false;
+  g_postGameActive = false;
+
   g_postGameAmbientFanActive = false;
   g_musicRound = true;
   g_roundNo = 3;
@@ -1577,7 +1627,9 @@ static void startMusicRound()
 
   g_round.timeLimited = true;
   g_round.tStart = millis();
+  g_musicStartMs = g_round.tStart;
   g_roundGuardUntilMs = g_round.tStart + 500; // 0.5 s bufor
+  
 
   remainLogReset();
   lightsApplyFromFlags();
@@ -1849,6 +1901,7 @@ static void settingsSaveToNVS();
 static void printSettings(const AHSettings &s);
 static void sayStart(uint8_t gtype, uint8_t idx);
 static void sfxPlayIndex(uint16_t idx);
+static void applyLiveSettingsNow();
 
 // ========================= SERIAL CONSOLE (TEST) =========================
 static bool g_serialEcho = true;
@@ -2024,16 +2077,16 @@ static void serialHandleLine(char *line)
 
   animsSetMode(ANIM_ROUND);   // <-- to jest klucz
 
-  if (!strcasecmp(tok[1], "a"))
-  {
-    binStart("/anims/strobea.bin");
-    Serial.println("[STROBE] BIN A");
-  }
-  else
-  {
-    binStart("/anims/strobeb.bin");
-    Serial.println("[STROBE] BIN B");
-  }
+if (!strcasecmp(tok[1], "a"))
+{
+  binStart("/anims/strobea.bin", millis());
+  Serial.println("[STROBE] BIN A");
+}
+else
+{
+  binStart("/anims/strobeb.bin", millis());
+  Serial.println("[STROBE] BIN B");
+}
   return;
 }
   int hz = 0;
@@ -2461,16 +2514,17 @@ void binStop()
   tableLightsMusicStop();
 }
 
-void binStart(const char *path)
+bool binStart(const char *path, uint32_t syncStartMs)
 {
   binStop();
 
   binPath = path;
   binFile = SD.open(binPath, FILE_READ);
+
   if (!binFile)
   {
     Serial.printf("[BIN] open failed: %s\n", binPath);
-    return;
+    return false;
   }
 
   uint32_t size = (uint32_t)binFile.size();
@@ -2478,20 +2532,35 @@ void binStart(const char *path)
 
   if (binFrameCount == 0)
   {
-    Serial.printf("[BIN] empty/too small: %s size=%lu\n", binPath, (unsigned long)size);
+    Serial.printf("[BIN] empty/too small: %s size=%lu\n",
+                  binPath,
+                  (unsigned long)size);
+
     binFile.close();
-    return;
+    return false;
   }
 
-  uint32_t now = millis();
-
-  Serial.printf("[BIN] start frames=%lu size=%lu\n",
-                (unsigned long)binFrameCount,
-                (unsigned long)size);
+  // TO JEST KLUCZ:
+  // nie ustawiamy startu animacji na millis(),
+  // tylko na start rundy muzycznej / start piosenki.
+  g_musicStartMs = syncStartMs;
 
   binPlaying = true;
   binLastRenderedFrame = UINT32_MAX;
-  g_musicStartMs = now;
+
+  uint32_t now = millis();
+  uint32_t elapsedMs = now - g_musicStartMs;
+  uint32_t frameIndex = ((elapsedMs * BIN_FPS) / 1000UL) % binFrameCount;
+
+  Serial.printf("[BIN] start sync path=%s frames=%lu size=%lu syncStart=%lu elapsed=%lu frame=%lu\n",
+                binPath,
+                (unsigned long)binFrameCount,
+                (unsigned long)size,
+                (unsigned long)g_musicStartMs,
+                (unsigned long)elapsedMs,
+                (unsigned long)frameIndex);
+
+  return true;
 }
 
 
@@ -2901,7 +2970,7 @@ digitalWrite(PIN_BLOWER, !BLOWER_ACTIVE); // wymuś OFF zanim reszta ruszy
 // MP3 UARTs
 MusicSerial.begin(9600, SERIAL_8N1, MP3_MUSIC_RX, MP3_MUSIC_TX);
 SfxSerial.begin(9600, SERIAL_8N1, MP3_SFX_RX, MP3_SFX_TX);
-mp3SetVol(MusicSerial, 50);
+mp3SetVol(MusicSerial, 27);
 mp3SetVol(SfxSerial, 30);
 
 // CAN
@@ -3113,19 +3182,27 @@ g_postGameAmbientFanActive = false;
         msg.identifier == CAN_ID_SETTINGS &&
         msg.data_length_code >= 4 &&
         msg.data[0] == CAN_CMD_SETTINGS)
-    {
-      handled = true;
+{
+  handled = true;
 
-      g_set.gameTimeIdx = msg.data[1];
-      g_set.goalsIdx    = msg.data[2];
-      g_set.flags       = msg.data[3];
+  const uint8_t oldFlags = g_set.flags;
 
-      settingsSaveToNVS();
+  g_set.gameTimeIdx = msg.data[1];
+  g_set.goalsIdx    = msg.data[2];
+  g_set.flags       = msg.data[3];
 
-      Serial.println("[CAN] SettingsUpdate -> saved");
-      printSettings(g_set);
-      sendSettingsAck();
-    }
+  settingsSaveToNVS();
+  sendSettingsAck();
+
+  Serial.print("[CAN] SettingsUpdate -> ");
+  printSettings(g_set);
+  Serial.println();
+
+  if (oldFlags != g_set.flags)
+  {
+    applyLiveSettingsNow();
+  }
+}
 
     // ---------------------------------------------------------
     // 3.6) PuckLock NOW – log
@@ -3321,6 +3398,7 @@ g_postGameAmbientFanActive = false;
         sfxPlayIndex(random(1, 31));
         Serial.printf("[GOAL] pollGoal()=%d  (ms=%lu)\n", (int)goal, (unsigned long)millis());
         animsOnGoal((uint8_t)goal, 800);
+        tableLightsGoalFx((uint8_t)goal);
       }
       else if (goal == 1)
       {
@@ -3330,6 +3408,7 @@ g_postGameAmbientFanActive = false;
         sfxPlayIndex(random(1, 31));
         Serial.printf("[GOAL] pollGoal()=%d  (ms=%lu)\n", (int)goal, (unsigned long)millis());
         animsOnGoal((uint8_t)goal, 800);
+        tableLightsGoalFx((uint8_t)goal);
       }
 
       updatePuckLockDuringRound();
@@ -3392,6 +3471,7 @@ g_postGameAmbientFanActive = false;
         sendGoalAnim(0, 2);
         sfxPlayIndex(random(31, 51));
         animsOnGoal(0, 800);
+tableLightsGoalFx(0);
       }
       else if (goal == 1)
       {
@@ -3400,6 +3480,7 @@ g_postGameAmbientFanActive = false;
         sendGoalAnim(1, 2);
         sfxPlayIndex(random(31, 51));
         animsOnGoal(1, 800);
+tableLightsGoalFx(1);
       }
 
       if (millis() - g_round.tStart >= g_round.tLimitMs)
@@ -3530,19 +3611,31 @@ g_postGameAmbientFanActive = false;
   // miejsce utworu/animacji.
 if (binPlaying)
 {
+  // Ambiente może dalej lecieć z BIN-a.
   tableLightsTick(now);
-  binUpdate();
 
-    UvLevel uvLevel = animsGetUvLevel(
-        flagOn(g_set.flags, F_UV),
-        true,
-        (uint8_t)g_theme,
-        now - g_musicStartMs);
-
-      uvSetLevel(uvDutyFromAnimLevel(uvLevel));
-
+  // Jeśli trwa efekt gola, to MUSIMY tykać animsTick(),
+  // bo inaczej ANIM_GOAL nigdy nie wróci do ANIM_ROUND.
+  if (animsGetMode() == ANIM_GOAL)
+  {
+    animsTick(now);
+    uvApply();
     return;
   }
+
+  // Normalnie, gdy jesteśmy w ANIM_ROUND, rysujemy BIN głównej matrycy.
+  binUpdate();
+
+  UvLevel uvLevel = animsGetUvLevel(
+      flagOn(g_set.flags, F_UV),
+      true,
+      (uint8_t)g_theme,
+      now - g_round.tStart);
+
+  uvSetLevel(uvDutyFromAnimLevel(uvLevel));
+
+  return;
+}
 
   // ---------------------------------------------------------
   // 7.4) Post-game ambient
