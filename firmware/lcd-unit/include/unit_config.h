@@ -16,5 +16,5 @@
 // - which character is used (Rayman / Globox)
 // - animation mood logic (win / lose)
 
-constexpr char UNIT_SIDE = 'B';   // SET SIDE A or B.
+constexpr char UNIT_SIDE = 'A';   // SET SIDE A or B.
 

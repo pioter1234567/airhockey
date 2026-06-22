@@ -385,7 +385,8 @@ bool animsLampActive()
 
 void animsOnGoal(uint8_t side, uint16_t durationMs) {
   g_goalSide = (side ? 1 : 0);
-  g_goalDur  = durationMs;          // <-- to dodaj
+  g_goalDur  = durationMs;
+  g_eventMs  = 0;                   // reset czasu efektu przy każdym golu
   animsSetMode(ANIM_GOAL);
   Serial.printf("[GOALFX] start side=%u dur=%u\n", (unsigned)g_goalSide, (unsigned)g_goalDur);
 }
@@ -430,47 +431,13 @@ static void renderGoal(uint32_t now){
   if (g_eventMs == 0) g_eventMs = now;
   uint32_t dt = now - g_eventMs;
 
-  // Tło: pół na pół (zależnie od strony gola)
+  // TYLKO czerwony/zielony split zależnie od strony gola.
+  // Bez niebieskich/żółtych pasków i bez białego flasha.
   matrixGoalSplit(g_goalSide);
 
-  const uint16_t W = matrixWidth();
-  // Animacja różna dla A i B:
-  // - A: niebieski "wipe" lewo→prawo
-  // - B: żółty "wipe" prawo→lewo
-  const int barW = 6;
-
-  // progress 0..(W+barW)
   uint32_t dur = (g_goalDur < 100) ? 100 : g_goalDur;
-  int prog = (int)((dt * (uint32_t)(W + barW)) / dur);
-
-  if (g_goalSide == 0){
-    // A: start poza lewą krawędzią, jedzie w prawo
-    int x0 = prog - barW;
-    drawBar(x0, barW, 0, 0, 255);
-  } else {
-    // B: start poza prawą krawędzią, jedzie w lewo
-    int x0 = (int)(W - 1) - prog;
-    drawBar(x0, barW, 255, 255, 0);
-  }
-
-  // Krótki "flash" na koniec efektu (żeby był czytelny)
-  if (dt + 80 >= dur){
-    // 2 ostatnie klatki: rozjaśnij tylko połowę po stronie gola
-    // (czytelny hint kierunku)
-    const uint16_t H = matrixHeight();
-    const uint16_t mid = W/2;
-    for (uint16_t y=0; y<H; ++y){
-      for (uint16_t x=0; x<W; ++x){
-        bool left = (x < mid);
-        bool goalOnLeft = (g_goalSide == 0); // możesz odwrócić jeśli A to prawa bramka
-        if (goalOnLeft == left){
-          matrixSetPixel((uint8_t)x,(uint8_t)y,255,255,255);
-        }
-      }
-    }
-  }
-
   if (dt >= dur){
+    
     animsSetMode(ANIM_ROUND);
   }
 }

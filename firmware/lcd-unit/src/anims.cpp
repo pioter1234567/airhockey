@@ -235,6 +235,7 @@ void animsInit()
   g_animPlaying = false;
   g_animStep = 0;
   g_animNextAtMs = 0;
+  g_animEndAtMs = 0;
 }
 
 void animsStartTest()
@@ -289,7 +290,11 @@ void animsStartStateTest(uint8_t scoreA, uint8_t scoreB, char whichChar)
 void animsStop()
 {
   g_animPlaying = false;
-  Serial.println("[ANIM] STOP");
+  g_animSpritesReady = false;
+  g_animStep = 0;
+  g_animNextAtMs = 0;
+  g_animEndAtMs = 0;
+  Serial.println("[ANIM] STOP/CANCEL");
 }
 
 bool animsIsPlaying()
@@ -302,36 +307,48 @@ void animsTick()
   if (!g_animPlaying)
     return;
 
-  if ((int32_t)(millis() - g_animNextAtMs) < 0)
+  const uint32_t now = millis();
+
+  // KONIEC ANIMACJI WYNIKU
+  // Sprawdzamy PRZED rysowaniem kolejnej klatki.
+  // Jeśli nowa gra zrobiła animsStop(), g_animEndAtMs będzie 0
+  // i stara animacja nie wróci już do /test.bin.
+  if (g_animEndAtMs != 0 && (int32_t)(now - g_animEndAtMs) >= 0)
+  {
+    g_animEndAtMs = 0;
+    g_animPlaying = false;
+    g_animSpritesReady = false;
+
+    Serial.println("[ANIM] RESULT END -> fade + test.bin");
+
+    fadeBacklight(255, 0, 120);
+
+    g_currentBgPath = "/test.bin";
+    drawRgb565File(g_currentBgPath, 480, 320);
+
+    fadeBacklight(0, 255, 140);
+    return;
+  }
+
+  if ((int32_t)(now - g_animNextAtMs) < 0)
     return;
 
   g_animStep = (g_animStep + 1) & 0x03;
   drawAnimStep(g_animStep);
-  g_animNextAtMs = millis() + g_animDurMs[g_animStep];
-    // KONIEC ANIMACJI
-if (g_animEndAtMs != 0 && (int32_t)(millis() - g_animEndAtMs) >= 0)
-{
-  g_animEndAtMs = 0;
-
-  Serial.println("[ANIM] RESULT END -> fade + test.bin");
-
-    fadeBacklight(255, 0, 120);
-  
-
-  g_animPlaying = false;
-
-  g_currentBgPath = "/test.bin";
-  drawRgb565File(g_currentBgPath, 480, 320);
-
-  fadeBacklight(0, 255, 140);
-  return;
-}
+  g_animNextAtMs = now + g_animDurMs[g_animStep];
 }
 
 void animsStartResult(uint8_t scoreA, uint8_t scoreB)
 {
+  // Nowy wynik zawsze startuje od czystego stanu,
+  // bez resztek poprzedniej animacji.
+  animsStop();
+
   char who = (UNIT_SIDE == 'A') ? 'a' : 'b';
   animsStartStateTest(scoreA, scoreB, who);
 
-  g_animEndAtMs = millis() + 13000; // ile sekund
+  if (g_animPlaying)
+    g_animEndAtMs = millis() + 13000; // ile sekund
+  else
+    g_animEndAtMs = 0;
 }

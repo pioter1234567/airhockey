@@ -222,8 +222,14 @@ static bool g_gameStarted = false;
 static bool g_returnToIdleAfterClockHide = false;
 static uint8_t g_roundNo = 0;
 
+
 // evt: 0=GameStart, 1=RoundStart, 2=RoundEnd, 3=GameOver, 4=CountdownTick
 // goal type: 1=normal round, 2=music round
+
+// Po starcie nowej gry/rundy ignorujemy spóźnioną animację wyniku
+// ze starej gry, żeby nie nadpisała nowego tła.
+static uint32_t g_resultAnimSuppressUntilMs = 0;
+static constexpr uint32_t RESULT_ANIM_SUPPRESS_AFTER_START_MS = 3000;
 
 static bool canInit()
 {
@@ -808,6 +814,35 @@ static void cancelOledClearSchedule()
   g_oledClearAtMs = 0;
 }
 
+static void cancelPostGameVisuals()
+{
+  animsStop();
+
+  g_clockHideScheduled = false;
+  g_clockHideAtMs = 0;
+  g_returnToIdleAfterClockHide = false;
+
+  cancelOledClearSchedule();
+
+  g_oledShowScheduled = false;
+  g_oledShowAtMs = 0;
+
+  g_oledBlinkActive = false;
+  g_oledBlinkAtMs = 0;
+  g_oledBlinkStep = 0;
+}
+
+static void suppressOldResultAnim(uint16_t ms = RESULT_ANIM_SUPPRESS_AFTER_START_MS)
+{
+  cancelPostGameVisuals();
+  g_resultAnimSuppressUntilMs = millis() + ms;
+}
+
+static bool oldResultAnimSuppressed()
+{
+  return (g_resultAnimSuppressUntilMs != 0) &&
+         ((int32_t)(millis() - g_resultAnimSuppressUntilMs) < 0);
+}
 
 
 static void oledTick()
@@ -922,14 +957,14 @@ static void onGameEvent(uint8_t evt, uint8_t a, uint8_t b)
   switch (evt)
   {
 case 0: // GameStart
-  cancelOledClearSchedule();
+  suppressOldResultAnim();
   Serial.println("[GAME] start");
   break;
 
 case 1: // RoundStart
   g_gameStarted = true;
   g_roundNo = a;
-  cancelOledClearSchedule();
+  suppressOldResultAnim();
   Serial.printf("[ROUND] start #%u\n", a);
   updateScoreDisplay();
   break;
@@ -974,6 +1009,12 @@ if (endedByTime)
 case 3: // GameOver
 {
   Serial.printf("[GAME] OVER rounds %u:%u\n", a, b);
+
+  if (oldResultAnimSuppressed())
+  {
+    Serial.println("[GAME] OVER ignored - stale result after new START/ROUND");
+    break;
+  }
 
   stopClock();
   g_clockLastText = "";
@@ -1028,13 +1069,17 @@ case CAN_ID_START_GAME:
     g_gameIndex = msg.data[2];
     g_gameStarted = true;
 
-    Serial.printf("[START] type=%u index=%u\n", g_gameType, g_gameIndex);
+Serial.printf("[START] type=%u index=%u\n", g_gameType, g_gameIndex);
+
+// Nowa gra/runda ma pierwszeństwo. Kasujemy wszystko ze starego wyniku.
+suppressOldResultAnim();
 
 applyGameBackground();
 g_clockLastText = "";
 
 g_clockHideScheduled = false;
 g_clockHideAtMs = 0;
+g_returnToIdleAfterClockHide = false;
 
 updateScoreDisplay();
   }
