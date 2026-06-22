@@ -1746,6 +1746,7 @@ static uint32_t g_breakT0 = 0;
 static const uint32_t BREAK_MS = 3000;
 static bool g_pendingBetweenRoundSfx = false;
 static uint32_t g_betweenRoundSfxAtMs = 0;
+static uint32_t g_breakPostGameLookAtMs = 0;
 
 // ========================= Goal input (ADC classifier) =========================
 // Returns: -1 none, 0 = A, 1 = B
@@ -2738,7 +2739,7 @@ static void enterGameOver()
   g_gameOverGuardUntilMs = millis() + 500;
 
   // Koniec całego meczu
-  sfxPlayFolderFile(1, 52);
+  sfxPlayFolderFile(1, 2);
 
  
 }
@@ -3462,15 +3463,32 @@ if (flagOn(g_set.flags, F_ANIM))
 
 if (byGoals || byTime)
 {
+  uint32_t now = millis();
+
   endRound();
   puckLockCmd(true, 0x03);
 
   // Jeśli runda 1 skończyła się golem, dajemy wybrzmieć SFX gola
   // i dopiero po 2 sekundach odpalamy dźwięk międzyrundowy.
-  if (byGoals && g_roundNo == 1)
+if (g_roundNo == 1 || g_roundNo == 2)
+{
+  g_pendingBetweenRoundSfx = true;
+
+  // Po golu dajemy wybrzmieć SFX gola.
+  // Po czasie nie ma SFX gola, więc dźwięk międzyrundowy może wejść od razu.
+  g_betweenRoundSfxAtMs = byGoals ? (now + 2000) : now;
+}
+
+  // Wygląd przerwy jak po grze:
+  // po golu czekamy 2 sekundy, żeby efekt gola zdążył polecieć,
+  // po końcu z czasu można wejść w ten stan od razu.
+  if (byGoals)
   {
-    g_pendingBetweenRoundSfx = true;
-    g_betweenRoundSfxAtMs = millis() + 2000;
+    g_breakPostGameLookAtMs = now + 800;
+  }
+  else
+  {
+    g_breakPostGameLookAtMs = now;
   }
 
   // Jeśli koniec był z czasu, nie ma efektu gola, więc można zgasić od razu.
@@ -3481,7 +3499,7 @@ if (byGoals || byTime)
   }
 
   g_state = GState::ROUND_BREAK;
-  g_breakT0 = millis();
+  g_breakT0 = now;
 }
     }
     break;
@@ -3709,6 +3727,22 @@ if (g_postGameActive &&
 {
   applyPostGameLights();
   return;
+}
+
+// ---------------------------------------------------------
+// 7.5) Round-break look (jak po grze)
+// ---------------------------------------------------------
+if (g_state == GState::ROUND_BREAK)
+{
+  if ((int32_t)(now - g_breakPostGameLookAtMs) >= 0)
+  {
+    // Nie pokazujemy już kolorów rundy / BIN-ów podczas przerwy
+    tableLightsSetRoundEnabled(false);
+    tableLightsMusicStop();
+
+    applyPostGameLights();
+    return;
+  }
 }
 
 if (g_state == GState::IDLE)
