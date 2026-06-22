@@ -457,7 +457,10 @@ void tableLightsTick(uint32_t nowMs)
 
 void tableLightsGoalFx(uint8_t scoringSide)
 {
-  goalFxSide = scoringSide ? 1 : 0;
+  // Zamiana fizycznych stron efektu gola:
+  // logiczne A pokazujemy jak B, logiczne B pokazujemy jak A
+  goalFxSide = scoringSide ? 0 : 1;
+
   goalFxStartMs = millis();
   goalFxDurationMs = 800;
   goalFxLastFrameMs = 0;

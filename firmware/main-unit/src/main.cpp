@@ -1237,6 +1237,8 @@ static uint8_t poolPickRandomTrack()
   return 1 + (uint8_t)random(0, n);
 }
 
+
+static void musicPlayFolderFile(uint8_t folder, uint8_t file);
 static void musicPlayTrack(uint8_t fileInThemeFolder)
 {
   Serial.printf(
@@ -1244,7 +1246,9 @@ static void musicPlayTrack(uint8_t fileInThemeFolder)
       THEMES[g_theme].name,
       THEMES[g_theme].folder,
       fileInThemeFolder);
-  mp3PlayFolderFile(MusicSerial, THEMES[g_theme].folder, fileInThemeFolder);
+
+  musicPlayFolderFile(THEMES[g_theme].folder, fileInThemeFolder);
+
   g_bgPlaying = true;
 }
 
@@ -1739,16 +1743,18 @@ static bool countdownTick()
 }
 
 static uint32_t g_breakT0 = 0;
-static const uint32_t BREAK_MS = 5000;
+static const uint32_t BREAK_MS = 3000;
+static bool g_pendingBetweenRoundSfx = false;
+static uint32_t g_betweenRoundSfxAtMs = 0;
 
 // ========================= Goal input (ADC classifier) =========================
 // Returns: -1 none, 0 = A, 1 = B
 static int8_t classifyGoalADC(int raw)
 {
   if (raw >= adcThreshAmin && raw <= adcThreshAmax)
-    return 0; // A
+    return 1; // A
   if (raw >= adcThreshBmin && raw <= adcThreshBmax)
-    return 1; // B
+    return 0; // B
   return -1;
 }
 static uint32_t lastGoalTs = 0;
@@ -2731,7 +2737,10 @@ static void enterGameOver()
   g_gameOverT0 = millis();
   g_gameOverGuardUntilMs = millis() + 500;
 
-  musicPlayFolderFile(6, 11);
+  // Koniec całego meczu
+  sfxPlayFolderFile(1, 52);
+
+ 
 }
 
 static void debugScanPixels()
@@ -3451,42 +3460,60 @@ if (flagOn(g_set.flags, F_ANIM))
       bool byTime = (g_round.timeLimited &&
                      (millis() - g_round.tStart >= g_round.tLimitMs));
 
-      if (byGoals || byTime)
-      {
-        endRound();
-        puckLockCmd(true, 0x03);
+if (byGoals || byTime)
+{
+  endRound();
+  puckLockCmd(true, 0x03);
 
-        // zwykłe animacje rundowe gasimy po końcu rundy,
-        // ale ręczna lampa i tak ma osobny priorytet w rendererze
-        animsSetMode(ANIM_OFF);
+  // Jeśli runda 1 skończyła się golem, dajemy wybrzmieć SFX gola
+  // i dopiero po 2 sekundach odpalamy dźwięk międzyrundowy.
+  if (byGoals && g_roundNo == 1)
+  {
+    g_pendingBetweenRoundSfx = true;
+    g_betweenRoundSfxAtMs = millis() + 2000;
+  }
 
-        g_state = GState::ROUND_BREAK;
-        g_breakT0 = millis();
-      }
+  // Jeśli koniec był z czasu, nie ma efektu gola, więc można zgasić od razu.
+  // Jeśli koniec był golem, nie gasimy ANIM_GOAL ręcznie — niech doleci normalnie.
+  if (byTime)
+  {
+    animsSetMode(ANIM_OFF);
+  }
+
+  g_state = GState::ROUND_BREAK;
+  g_breakT0 = millis();
+}
     }
     break;
 
-    case GState::ROUND_BREAK:
+case GState::ROUND_BREAK:
+{
+  if (g_pendingBetweenRoundSfx &&
+      (int32_t)(millis() - g_betweenRoundSfxAtMs) >= 0)
+  {
+    g_pendingBetweenRoundSfx = false;
+    sfxPlayFolderFile(1, 1);   // /01/001.mp3
+  }
+
+  if (millis() - g_breakT0 >= BREAK_MS)
+  {
+    if (g_roundNo < 2)
     {
-      if (millis() - g_breakT0 >= BREAK_MS)
-      {
-        if (g_roundNo < 2)
-        {
-          g_state = GState::ROUND_NORMAL;
-          startNormalRound();
-        }
-        else if (g_roundNo == 2)
-        {
-          g_state = GState::ROUND_MUSIC;
-          startMusicRound();
-        }
-        else
-        {
-          enterGameOver();
-        }
-      }
+      g_state = GState::ROUND_NORMAL;
+      startNormalRound();
     }
-    break;
+    else if (g_roundNo == 2)
+    {
+      g_state = GState::ROUND_MUSIC;
+      startMusicRound();
+    }
+    else
+    {
+      enterGameOver();
+    }
+  }
+}
+break;
 
     case GState::ROUND_MUSIC:
     {
