@@ -19,3 +19,6 @@ void tableLightsSetRoundEnabled(bool enable);
 // Na później — bramki
 void tableLightsGoalFx(uint8_t scoringSide);
 void tableLightsSetGoalsEnabled(bool enabled);
+
+
+void tableLightsSetGoalsColor(uint8_t r, uint8_t g, uint8_t b);

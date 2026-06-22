@@ -1032,12 +1032,9 @@ bool binStart(const char *path, uint32_t syncStartMs);
 void binUpdate();
 
 static ThemeId g_theme = TH_TEENSIES;
-static void applyRoundTheme(bool breathing)
-{
-  uint8_t r = 0;
-  uint8_t g = 0;
-  uint8_t b = 0;
 
+static void getThemeColor(uint8_t &r, uint8_t &g, uint8_t &b)
+{
   switch (g_theme)
   {
     case TH_TEENSIES:
@@ -1050,7 +1047,7 @@ static void applyRoundTheme(bool breathing)
       r = 255; g = 90;  b = 0;   break; // pomarańczowy
 
     case TH_20000:
-      r = 0;   g = 50;  b = 70;  break; // ciemny morski
+      r = 0;   g = 50;  b = 70;  break; // morski
 
     case TH_OLYMPUS:
       r = 150; g = 0;   b = 255; break; // fiolet
@@ -1061,6 +1058,27 @@ static void applyRoundTheme(bool breathing)
     default:
       r = 0;   g = 0;   b = 0;   break;
   }
+}
+
+static void applyGoalLightsBySettings()
+{
+  uint8_t r = 0, g = 0, b = 0;
+  getThemeColor(r, g, b);
+
+  tableLightsSetGoalsColor(r, g, b);
+  tableLightsSetGoalsEnabled(flagOn(g_set.flags, F_GOALILLUM));
+}
+
+
+
+
+static void applyRoundTheme(bool breathing)
+{
+  uint8_t r = 0;
+  uint8_t g = 0;
+  uint8_t b = 0;
+
+  getThemeColor(r, g, b);
 
   animsSetRoundColor(r, g, b);
   animsSetBreathing(breathing);
@@ -1068,6 +1086,8 @@ static void applyRoundTheme(bool breathing)
   tableLightsSetRoundColor(r, g, b);
   tableLightsSetBreathing(breathing);
   tableLightsSetRoundEnabled(true);
+
+  applyGoalLightsBySettings();
 }
 
 
@@ -1091,6 +1111,10 @@ static void applyRoundLightsBySettings(bool musicRound)
 {
   const bool animOn   = flagOn(g_set.flags, F_ANIM);
   const bool stroboOn = flagOn(g_set.flags, F_STROBES);
+
+  // Bramki świecą kolorem świata niezależnie od trybu animacji,
+  // ale tylko jeśli Goal illumination jest ON.
+  applyGoalLightsBySettings();
 
   // ANIM OFF = biała lampa, niezależnie od strobo
   if (!animOn)
@@ -1652,6 +1676,7 @@ static void endRound(bool finalGameOver = false)
 {
   binStop();
   tableLightsMusicStop();
+  tableLightsSetGoalsEnabled(false);
 
   uint8_t winner = 2;
   if (g_round.scoreA > g_round.scoreB) {
@@ -2970,7 +2995,7 @@ digitalWrite(PIN_BLOWER, !BLOWER_ACTIVE); // wymuś OFF zanim reszta ruszy
 // MP3 UARTs
 MusicSerial.begin(9600, SERIAL_8N1, MP3_MUSIC_RX, MP3_MUSIC_TX);
 SfxSerial.begin(9600, SERIAL_8N1, MP3_SFX_RX, MP3_SFX_TX);
-mp3SetVol(MusicSerial, 27);
+mp3SetVol(MusicSerial, 28);
 mp3SetVol(SfxSerial, 30);
 
 // CAN
@@ -3397,8 +3422,11 @@ g_postGameAmbientFanActive = false;
         sendGoalAnim(0, 1);
         sfxPlayIndex(random(1, 31));
         Serial.printf("[GOAL] pollGoal()=%d  (ms=%lu)\n", (int)goal, (unsigned long)millis());
-        animsOnGoal((uint8_t)goal, 800);
-        tableLightsGoalFx((uint8_t)goal);
+if (flagOn(g_set.flags, F_ANIM))
+{
+  animsOnGoal((uint8_t)goal, 800);
+  tableLightsGoalFx((uint8_t)goal);
+}
       }
       else if (goal == 1)
       {
@@ -3407,8 +3435,11 @@ g_postGameAmbientFanActive = false;
         sendGoalAnim(1, 1);
         sfxPlayIndex(random(1, 31));
         Serial.printf("[GOAL] pollGoal()=%d  (ms=%lu)\n", (int)goal, (unsigned long)millis());
-        animsOnGoal((uint8_t)goal, 800);
-        tableLightsGoalFx((uint8_t)goal);
+if (flagOn(g_set.flags, F_ANIM))
+{
+  animsOnGoal((uint8_t)goal, 800);
+  tableLightsGoalFx((uint8_t)goal);
+}
       }
 
       updatePuckLockDuringRound();
@@ -3470,8 +3501,11 @@ g_postGameAmbientFanActive = false;
         sendScoreUpdate(g_round.scoreA, g_round.scoreB);
         sendGoalAnim(0, 2);
         sfxPlayIndex(random(31, 51));
-        animsOnGoal(0, 800);
-tableLightsGoalFx(0);
+if (flagOn(g_set.flags, F_ANIM))
+{
+  animsOnGoal(0, 800);
+  tableLightsGoalFx(0);
+}
       }
       else if (goal == 1)
       {
@@ -3479,8 +3513,11 @@ tableLightsGoalFx(0);
         sendScoreUpdate(g_round.scoreA, g_round.scoreB);
         sendGoalAnim(1, 2);
         sfxPlayIndex(random(31, 51));
-        animsOnGoal(1, 800);
-tableLightsGoalFx(1);
+if (flagOn(g_set.flags, F_ANIM))
+{
+  animsOnGoal(1, 800);
+  tableLightsGoalFx(1);
+}
       }
 
       if (millis() - g_round.tStart >= g_round.tLimitMs)

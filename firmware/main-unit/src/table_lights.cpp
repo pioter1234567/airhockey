@@ -15,7 +15,7 @@
 #define AMBIENT_LED_COUNT 192
 
 #define GOAL_DATA_PIN 11
-#define GOAL_LED_COUNT 0   // na razie 0, jak podłączysz bramki, ustawimy realną liczbę
+#define GOAL_LED_COUNT 22 
 
 // =====================================================
 // BIN PARAMS
@@ -69,6 +69,13 @@ static uint32_t goalFxDurationMs = 800;
 static uint32_t goalFxLastFrameMs = 0;
 
 // =====================================================
+// GOAL LIGHTS STATE
+// =====================================================
+
+static bool goalsEnabled = false;
+static CRGB goalsBaseColor = CRGB::Black;
+
+// =====================================================
 // HELPERS
 // =====================================================
 
@@ -118,6 +125,11 @@ static bool isAmbientLeftHalf(uint16_t i)
   return false;
 }
 
+#if GOAL_LED_COUNT > 0
+static void goalsRenderBase();
+static void goalsRenderGoalFx(uint8_t scoringSide, uint8_t power);
+#endif
+
 static void renderGoalFx(uint32_t nowMs)
 {
   if (!goalFxActive)
@@ -125,11 +137,16 @@ static void renderGoalFx(uint32_t nowMs)
 
   uint32_t dt = nowMs - goalFxStartMs;
 
-  if (dt >= goalFxDurationMs)
-  {
-    goalFxActive = false;
-    return;
-  }
+if (dt >= goalFxDurationMs)
+{
+  goalFxActive = false;
+
+#if GOAL_LED_COUNT > 0
+  goalsRenderBase();
+#endif
+
+  return;
+}
 
   // Limit klatek, żeby nie mielić bez sensu.
   if (nowMs - goalFxLastFrameMs < 25)
@@ -164,6 +181,9 @@ static void renderGoalFx(uint32_t nowMs)
     // Tak jak reszta ambiente: swap R/G.
     ambientLeds[i] = CRGB(c.g, c.r, c.b);
   }
+  #if GOAL_LED_COUNT > 0
+  goalsRenderGoalFx(goalFxSide, power);
+#endif
 }
 
 static void renderAmbientRound(uint32_t nowMs)
@@ -194,6 +214,53 @@ static void goalsClear()
 {
   fill_solid(goalLeds, GOAL_LED_COUNT, CRGB::Black);
 }
+#endif
+
+#if GOAL_LED_COUNT > 0
+
+static inline CRGB fixGoalColor(uint8_t r, uint8_t g, uint8_t b)
+{
+  // Tak samo jak reszta Twoich LED-ów: swap R/G.
+  return CRGB(g, r, b);
+}
+
+static void goalsRenderBase()
+{
+  if (!goalsEnabled)
+  {
+    fill_solid(goalLeds, GOAL_LED_COUNT, CRGB::Black);
+    return;
+  }
+
+  fill_solid(goalLeds, GOAL_LED_COUNT, fixGoalColor(
+    goalsBaseColor.r,
+    goalsBaseColor.g,
+    goalsBaseColor.b
+  ));
+}
+
+static void goalsRenderGoalFx(uint8_t scoringSide, uint8_t power)
+{
+  const uint16_t half = GOAL_LED_COUNT / 2;
+
+  CRGB green = fixGoalColor(0, power, 0);
+  CRGB red   = fixGoalColor(power, 0, 0);
+
+  for (uint16_t i = 0; i < GOAL_LED_COUNT; i++)
+  {
+    bool isGoalA = (i < half);
+
+    // scoringSide 0 = A zdobywa punkt:
+    // bramka A zielona, bramka B czerwona
+    //
+    // scoringSide 1 = B zdobywa punkt:
+    // bramka B zielona, bramka A czerwona
+    bool winnerGoal = (scoringSide == 0) ? isGoalA : !isGoalA;
+
+    goalLeds[i] = winnerGoal ? green : red;
+  }
+}
+
 #endif
 
 // =====================================================
@@ -234,6 +301,9 @@ void tableLightsAllOff()
   tableLightsMusicStop();
 
   ambientClear();
+
+  goalsEnabled = false;
+  goalsBaseColor = CRGB::Black;
 
 #if GOAL_LED_COUNT > 0
   goalsClear();
@@ -398,5 +468,25 @@ void tableLightsGoalFx(uint8_t scoringSide)
 
 void tableLightsSetGoalsEnabled(bool enabled)
 {
+  goalsEnabled = enabled;
+
+#if GOAL_LED_COUNT > 0
+  goalsRenderBase();
+#endif
+
   Serial.printf("[TABLE] goals %s\n", enabled ? "ON" : "OFF");
+}
+
+void tableLightsSetGoalsColor(uint8_t r, uint8_t g, uint8_t b)
+{
+  goalsBaseColor = CRGB(r, g, b);
+
+#if GOAL_LED_COUNT > 0
+  goalsRenderBase();
+#endif
+
+  Serial.printf("[TABLE] goals color r=%u g=%u b=%u\n",
+                (unsigned)r,
+                (unsigned)g,
+                (unsigned)b);
 }
