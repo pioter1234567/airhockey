@@ -131,6 +131,10 @@ static void showScoreOnDisplay(Adafruit_SH1106G &disp, uint8_t score)
 #define CAN_ID_GOAL_ANIM 0x322    // [side(0=A,1=B), type]
 #define CAN_ID_GAME_EVENT 0x323   // [evt, a, b]
 #define CAN_ID_ROUND_TIME 0x324   // [sec_hi, sec_lo]
+#define CAN_ID_DISPLAY_POWER 0x325
+#define CAN_CMD_DISPLAY_POWER 0x80
+#define CAN_DISPLAY_OFF 0x00
+#define CAN_DISPLAY_ON  0x01
 
 
 LGFX_ILI9488 tft;
@@ -783,6 +787,42 @@ static void clearScoreDisplays()
   oled2.display();
 }
 
+static bool g_displaysSleeping = false;
+static void cancelPostGameVisuals();
+
+static void displaysSleep()
+{
+  g_displaysSleeping = true;
+
+  stopClock();
+  cancelPostGameVisuals();
+
+  clearScoreDisplays();
+
+  tft.fillScreen(C_BLACK);
+  setBacklight(0);
+
+  Serial.println("[DISPLAY] sleep");
+}
+
+static void displaysWake()
+{
+  if (!g_displaysSleeping)
+    return;
+
+  g_displaysSleeping = false;
+
+  setBacklight(255);
+
+  if (g_gameStarted)
+  {
+    applyGameBackground();
+    updateScoreDisplay();
+  }
+
+  Serial.println("[DISPLAY] wake");
+}
+
 static void scheduleOledClear(uint16_t delayMs)
 {
   g_oledClearScheduled = true;
@@ -1065,6 +1105,9 @@ static void handleCanFrame(const twai_message_t &msg)
 case CAN_ID_START_GAME:
   if (msg.data_length_code == 3 && msg.data[0] == CAN_CMD_START_GAME)
   {
+    g_displaysSleeping = false;
+    setBacklight(255);
+
     g_gameType = msg.data[1];
     g_gameIndex = msg.data[2];
     g_gameStarted = true;
@@ -1140,6 +1183,24 @@ updateScoreDisplay();
       Serial.printf("[WARN] bad ROUND_TIME frame dlc=%d\n", msg.data_length_code);
     }
     break;
+
+    case CAN_ID_DISPLAY_POWER:
+  if (msg.data_length_code >= 2 && msg.data[0] == CAN_CMD_DISPLAY_POWER)
+  {
+    if (msg.data[1] == CAN_DISPLAY_OFF)
+    {
+      displaysSleep();
+    }
+    else if (msg.data[1] == CAN_DISPLAY_ON)
+    {
+      displaysWake();
+    }
+  }
+  else
+  {
+    Serial.printf("[WARN] bad DISPLAY_POWER frame dlc=%d\n", msg.data_length_code);
+  }
+  break;
 
   default:
     Serial.printf("[CAN] unhandled id=0x%03X\n", msg.identifier);
@@ -1522,7 +1583,10 @@ void loop()
     }
   }*/
 
+if (!g_displaysSleeping)
+{
   clockTick();
   animsTick();
   oledTick();
+}
 }

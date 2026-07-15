@@ -281,10 +281,10 @@ static const char *MUSIC_AMBIENT_PATHS[] = {
 
 // parametry ruchu (możesz potem dostroić)
 #ifndef MS_LOCK_MOVE
-#define MS_LOCK_MOVE 70
+#define MS_LOCK_MOVE 80
 #endif
 #ifndef MS_UNLOCK_MOVE
-#define MS_UNLOCK_MOVE 70
+#define MS_UNLOCK_MOVE 80
 #endif
 #ifndef LOCK_A_IS_FORWARD
 #define LOCK_A_IS_FORWARD true
@@ -438,7 +438,7 @@ static constexpr int PUCK_PWM_MAX = (1 << PUCK_PWM_RES) - 1;
 static constexpr int PUCK_CH_A = 6;
 static constexpr int PUCK_CH_B = 7;
 
-static constexpr int PUCK_SPEED_PERCENT = 80;
+static constexpr int PUCK_SPEED_PERCENT = 90;
 static constexpr int PUCK_RAMP_UP_MS = 80;
 static constexpr int PUCK_RAMP_DOWN_MS = 80;
 
@@ -695,8 +695,11 @@ static inline void puckTick()
 #define CAN_ID_SCORE_UPDATE 0x321 // data: [scoreA, scoreB]
 #define CAN_ID_GOAL_ANIM 0x322    // data: [side(0=A,1=B), type]
 #define CAN_ID_GAME_EVENT 0x323   // data: [evt, a, b]
-
 #define CAN_ID_ROUND_TIME 0x324   // data: [sec_hi, sec_lo]
+#define CAN_ID_DISPLAY_POWER 0x325
+#define CAN_CMD_DISPLAY_POWER 0x80
+#define CAN_DISPLAY_OFF 0x00
+#define CAN_DISPLAY_ON  0x01
 // evt: 0=GameStart, 1=RoundStart, 2=RoundEnd, 3=GameOver, 4=CountdownTick(3..1)
 
 // New: Start-Game we already listen (0x301) → [0x01, gtype, gindex]
@@ -873,7 +876,22 @@ static int readGoalRawMedian()
 }
 
 
+static int readGoalRawPulse()
+{
+  int best = 4095;
 
+  // Aktywacja czujników obniża ADC, więc szukamy najniższej
+  // wartości z krótkiej serii pomiarów.
+  for (int i = 0; i < 8; i++)
+  {
+    int raw = analogRead(PIN_GOAL_ADC);
+
+    if (raw < best)
+      best = raw;
+  }
+
+  return best;
+}
 
 
 
@@ -1359,6 +1377,19 @@ static void sendGameEvent(uint8_t evt, uint8_t a = 0, uint8_t b = 0)
   twai_transmit(&m, pdMS_TO_TICKS(20));
 }
 
+static void sendDisplayPower(bool on)
+{
+  twai_message_t m = {};
+  m.identifier = CAN_ID_DISPLAY_POWER;
+  m.data_length_code = 2;
+  m.data[0] = CAN_CMD_DISPLAY_POWER;
+  m.data[1] = on ? CAN_DISPLAY_ON : CAN_DISPLAY_OFF;
+
+  twai_transmit(&m, pdMS_TO_TICKS(20));
+
+  Serial.printf("[DISPLAY] power %s\n", on ? "ON" : "OFF");
+}
+
 static void sendRoundTimeSeconds(uint16_t secs)
 {
   twai_message_t m = {};
@@ -1443,24 +1474,30 @@ static void fanAutoUpdate()
   bool uv = isUvEnabled();
 
   if (isGameActive() || isManualLampActive())
-  {
     target = uv ? 70 : 40;
-  }
   else if (g_postGameAmbientFanActive)
-  {
     target = uv ? 30 : 0;
-  }
   else
-  {
     target = 0;
+
+  static int lastTarget = -1;
+
+  if (target != lastTarget)
+  {
+    Serial.printf(
+        "[FAN AUTO] target=%u game=%d manual=%d post=%d uv=%d\n",
+        target,
+        isGameActive(),
+        isManualLampActive(),
+        g_postGameAmbientFanActive,
+        uv);
+
+    lastTarget = target;
   }
 
   if (target != g_fanPercent || target == 0)
     fanSetPercent(target);
-
-    
 }
-
 static void musicAutoAdvanceTick()
 {
   static bool wasPlaying = false;
@@ -1712,6 +1749,7 @@ static uint8_t countdownStep = 3;
 static uint32_t countdownT0 = 0;
 static void countdownBegin()
 {
+  mp3SetVol(SfxSerial, 30);
   countdownStep = 3;
   countdownT0 = millis();
   sfxPlayIndex(3);
@@ -1758,6 +1796,57 @@ static int8_t classifyGoalADC(int raw)
     return 0; // B
   return -1;
 }
+
+static volatile int8_t g_pendingGoal = -1;
+
+static portMUX_TYPE g_goalMux = portMUX_INITIALIZER_UNLOCKED;
+
+static void goalSensorTask(void *param)
+{
+  int8_t latchedGate = -1;
+
+  // Ile kolejnych próbek spoczynkowych potrzeba do ponownego uzbrojenia.
+  uint8_t idleSamples = 0;
+
+  for (;;)
+  {
+    int raw = analogRead(PIN_GOAL_ADC);
+    int8_t gate = classifyGoalADC(raw);
+
+    if (gate >= 0)
+    {
+      idleSamples = 0;
+
+      // Nowe wejście w czujnik.
+      if (latchedGate != gate)
+      {
+        latchedGate = gate;
+
+        portENTER_CRITICAL(&g_goalMux);
+
+        // Nie nadpisujemy gola, którego główna pętla jeszcze nie odebrała.
+        if (g_pendingGoal < 0)
+          g_pendingGoal = gate;
+
+        portEXIT_CRITICAL(&g_goalMux);
+      }
+    }
+    else
+    {
+      // Musi być kilka kolejnych spokojnych próbek,
+      // zanim czujnik uznamy za opuszczony.
+      if (idleSamples < 20)
+        idleSamples++;
+
+      if (idleSamples >= 10)
+        latchedGate = -1;
+    }
+
+    // 250 µs = około 4000 pomiarów na sekundę.
+    delayMicroseconds(250);
+  }
+}
+
 static uint32_t lastGoalTs = 0;
 static int8_t lastGateLatched = -1; // edge-type lock to avoid double count while signal persists
 static uint32_t lastNoGoalTs = 0;
@@ -1766,51 +1855,54 @@ static int readGoalRaw() { return analogRead(PIN_GOAL_ADC); }
 
 static int8_t pollGoal(int *rawOut = nullptr)
 {
-  if (rawOut) *rawOut = -1;
+  if (rawOut)
+    *rawOut = -1;
 
-  // SERIAL injected goal has priority (one-shot)
   if (g_forcedGoal >= 0)
   {
     int8_t g = g_forcedGoal;
     g_forcedGoal = -1;
-    Serial.printf("[GOAL] injected side=%c\n", g == 0 ? 'A' : 'B');
     return g;
   }
 
-  uint32_t now = millis();
+  const uint32_t now = millis();
 
-  // Cooldown
   if (now - lastGoalTs < GOAL_COOLDOWN_MS)
     return -1;
 
-  int raw = readGoalRawMedian();
-  if (rawOut) *rawOut = raw;
+  int raw = readGoalRawPulse();
+
+  if (rawOut)
+    *rawOut = raw;
 
   int8_t g = classifyGoalADC(raw);
 
   if (g >= 0)
   {
-    // wróciliśmy do aktywnej bramki, więc kasujemy timer "brak gola"
     lastNoGoalTs = 0;
 
-    // jeśli nadal ten sam przelot, ignoruj
     if (lastGateLatched == g)
       return -1;
 
     lastGateLatched = g;
     lastGoalTs = now;
 
-    Serial.printf("[GOAL] side=%c (ADC=%d)\n", g == 0 ? 'A' : 'B', raw);
+    Serial.printf("[GOAL] side=%c ADC=%d\n",
+                  g == 0 ? 'A' : 'B',
+                  raw);
+
     return g;
   }
 
-  // g < 0 -> nie zwalniaj latcha od razu, tylko po chwili stabilnego spokoju
   if (lastGateLatched != -1)
   {
     if (lastNoGoalTs == 0)
       lastNoGoalTs = now;
     else if (now - lastNoGoalTs >= GOAL_RELEASE_MS)
+    {
       lastGateLatched = -1;
+      lastNoGoalTs = 0;
+    }
   }
 
   return -1;
@@ -2739,6 +2831,7 @@ static void enterGameOver()
   g_gameOverGuardUntilMs = millis() + 500;
 
   // Koniec całego meczu
+  mp3SetVol(SfxSerial, 27);
   sfxPlayFolderFile(1, 2);
 
  
@@ -2992,6 +3085,8 @@ animsSetMode(ANIM_OFF);
 analogReadResolution(12);
 analogSetPinAttenuation(PIN_GOAL_ADC, ADC_11db);
 
+
+
 // Jeden seed, porządny (HW RNG + drobna entropia)
 randomSeed((uint32_t)esp_random() ^ (uint32_t)micros() ^ (uint32_t)analogRead(PIN_GOAL_ADC));
 
@@ -3069,17 +3164,20 @@ void loop()
   {
     uint32_t now = millis();
 
-    if (now - g_postGameStartMs >= POST_GAME_DURATION_MS)
-    {
-      
-matrixFill(0, 0, 0);
-tableLightsAllOff();
-matrixShow();
+   if (now - g_postGameStartMs >= POST_GAME_DURATION_MS)
+{
+  matrixFill(0, 0, 0);
+  tableLightsAllOff();
+  matrixShow();
 
-g_postGameActive = false;
-g_postGameAmbientFanActive = false;
-      Serial.println("[POST GAME] timeout -> all OFF");
-    }
+  // Wygaszamy ekrany dokładnie razem z końcem ambiente.
+  sendDisplayPower(false);
+
+  g_postGameActive = false;
+  g_postGameAmbientFanActive = false;
+
+  Serial.println("[POST GAME] timeout -> all OFF");
+}
   }
 
   // =========================================================
@@ -3094,7 +3192,7 @@ g_postGameAmbientFanActive = false;
   // 3) ODBIÓR CAN
   // =========================================================
   twai_message_t msg;
-  if (twai_receive(&msg, pdMS_TO_TICKS(10)) == ESP_OK)
+ if (twai_receive(&msg, 0) == ESP_OK)
   {
     bool handled = false;
 
@@ -3589,13 +3687,29 @@ if (flagOn(g_set.flags, F_ANIM))
 
       int8_t goal = pollGoalForGameOver();
 
-      if (goal >= 0)
-      {
-        blowerSet(false);
+if (goal >= 0)
+{
+  blowerSet(false);
 
-        applyPostGameLights();
-        g_state = GState::WAIT_PUCK_CLEAR;
-      }
+  // Jeśli post-game ambient jeszcze trwa, zostawiamy wygląd po grze.
+  // Jeśli już wygasł, NIE odpalamy go ponownie, bo robi to mignięcie.
+  if (g_postGameActive)
+  {
+    applyPostGameLights();
+  }
+  else
+  {
+    matrixFill(0, 0, 0);
+    tableLightsAllOff();
+    matrixShow();
+    uvSetLevel(0.0f);
+
+    // jeśli dodałeś CAN do ekranów:
+    sendDisplayPower(false);
+  }
+
+  g_state = GState::WAIT_PUCK_CLEAR;
+}
     }
     break;
 
@@ -3884,6 +3998,7 @@ static void gameStartFull(uint8_t index)
                 THEMES[g_theme].folder);
 
   g_state = GState::PREPARE;
+  sendDisplayPower(true);
 }
 
 
@@ -3903,4 +4018,5 @@ static void gameStartMusicOnlyRandom()
 
   Serial.printf("[GAME] MUSIC-ONLY: theme=%s (folder %02u)", THEMES[g_theme].name, THEMES[g_theme].folder);
   g_state = GState::PREPARE;
+  sendDisplayPower(true);
 }
